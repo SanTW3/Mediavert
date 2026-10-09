@@ -87,6 +87,13 @@ button, select, input { font: inherit; color: inherit; }
 input, select { user-select: auto; }
 svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
+/* появление окна из челки */
+body.preparing .titlebar, body.preparing .layout { opacity: 0; }
+body.entering .titlebar,
+body.entering .layout { animation: window-enter .3s cubic-bezier(.2, .9, .3, 1) both; transform-origin: 50% 0; }
+body.entering .layout { animation-delay: .03s; }
+@keyframes window-enter { from { opacity: 0; transform: translateY(-10px) scale(.99); } }
+
 /* ---------- заголовок окна ---------- */
 
 .titlebar {

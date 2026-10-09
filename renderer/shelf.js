@@ -151,10 +151,7 @@ document.addEventListener('drop', async (e) => {
   hot(null);
   const files = [...e.dataTransfer.files].map((f) => api.pathForFile(f)).filter(Boolean);
   if (!tile || !files.length) return setMode(restMode());
-  if (tile.dataset.format === '__open') {
-    api.openMain(files);
-    return setMode(restMode());
-  }
+  if (tile.dataset.format === '__open') return openMainMorph(files);
   await api.convert({ files, format: tile.dataset.format, source: 'shelf' });
   setMode('activity');
 });
@@ -258,9 +255,24 @@ api.on('job:update', upsert);
 
 $('#openApp').onclick = (e) => {
   e.stopPropagation();
-  api.openMain([]);
-  setMode(restMode());
+  openMainMorph([]);
 };
+
+// «Перетекание» в главное окно: сообщаем, где сейчас островок, а когда капля
+// уже нарисована поверх — мгновенно убираем сам островок
+function openMainMorph(files) {
+  const r = island.getBoundingClientRect();
+  api.openMain(files, { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) });
+  morphFallback = setTimeout(() => setMode(restMode()), 1200); // если анимация не запустилась
+}
+let morphFallback = null;
+api.on('shelf:morph-started', () => {
+  clearTimeout(morphFallback);
+  island.classList.add('instant');
+  setMode(restMode());
+  island.classList.add('instant'); // setMode перезаписывает классы
+  requestAnimationFrame(() => requestAnimationFrame(() => island.classList.remove('instant')));
+});
 $('#clear').onclick = (e) => {
   e.stopPropagation();
   api.clearJobs(SOURCES);

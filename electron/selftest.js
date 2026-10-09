@@ -2,6 +2,7 @@
 // Не попадает в сборку (исключена в package.json)
 const fs = require('fs');
 const path = require('path');
+const { BrowserWindow } = require('electron');
 const settings = require('./settings');
 const integration = require('./integration');
 
@@ -21,13 +22,37 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
   const record = async ([x, y, w, h, n], name, act) => {
     const prefix = path.join(out, name);
     fs.rmSync(`${prefix}.ready`, { force: true });
-    const rec = require('child_process').spawn('powershell', ['-NoProfile', '-File', path.join(dir, 'grabseq.ps1'), x, y, w, h, n, prefix].map(String));
+    const rec = require('child_process').spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grabseq.ps1'), x, y, w, h, n, prefix].map(String), { stdio: 'ignore' });
     while (!fs.existsSync(`${prefix}.ready`)) await wait(20);
     await wait(80);
     await act();
     await new Promise((r) => rec.on('exit', r));
     log('frames', name);
   };
+
+  async function morphTest(main, shelf) {
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    main.hide();
+    await shelf.webContents.executeJavaScript(`setMode('activity')`);
+    await wait(350); // меньше, чем челка ждёт ухода курсора
+    const d = require('electron').screen.getPrimaryDisplay().bounds;
+    const prefix = path.join(out, 'morph-frames');
+    fs.rmSync(`${prefix}.ready`, { force: true });
+    log('morph: recording');
+    const rec = require('child_process').spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grabseq2.ps1'), d.x, d.y, d.width, d.height, 20, prefix, 0.3, 4].map(String), { stdio: 'ignore' });
+    rec.on('error', (e) => log('recorder error', e.message));
+    while (!fs.existsSync(`${prefix}.ready`)) await wait(20);
+    await wait(60);
+    await shelf.webContents.executeJavaScript(`document.querySelector('#openApp').click()`);
+    await new Promise((r) => rec.on('exit', r));
+    await wait(300);
+    const morph = BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Mediavert Morph');
+    log('after morph: main visible', main.isVisible(), 'focused', main.isFocused(), '| morph parked', morph ? morph.getBounds().x < -10000 : 'none',
+      '| shelf mode', await shelf.webContents.executeJavaScript('mode'), '| opacity', main.getOpacity());
+    await wait(600);
+    const b = main.getBounds();
+    require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'after-morph.png')].map(String));
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -46,7 +71,7 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     const b = shelf.getBounds();
     const cx = b.x + Math.round(b.width / 2);
     for (const y of [3, 20]) {
-      const r = require('child_process').spawnSync('powershell', ['-NoProfile', '-File', path.join(dir, 'hit.ps1'), String(cx), String(y)], { encoding: 'utf8' });
+      const r = require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'hit.ps1'), String(cx), String(y)], { encoding: 'utf8' });
       log('hit', r.stdout.trim());
     }
     await shelf.webContents.executeJavaScript(`buildTiles(null, 2); setMode('drop')`);
@@ -95,13 +120,21 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     while (!(main = getMain()) || !main.isVisible()) await wait(100);
     await wait(800);
 
+    if (process.env.MEDIAVERT_MORPH_ONLY) {
+      let shelf2;
+      while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
+      await morphTest(main, shelf2);
+      log('DONE');
+      return app.exit(0);
+    }
+
     // настоящий снимок экрана (виден материал Mica и кнопки окна)
     const grab = async (name) => {
       main.moveTop();
       main.focus();
       await wait(500);
       const b = main.getBounds();
-      require('child_process').spawnSync('powershell', ['-NoProfile', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, `${name}.png`)].map(String));
+      require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, `${name}.png`)].map(String), { stdio: 'ignore' });
       log('grab', name);
     };
     const theme = async (t) => {
@@ -189,6 +222,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     await wait(500);
     await grab('guide-dark');
     await theme('system');
+
+    if (process.env.MEDIAVERT_MORPH) await morphTest(main, shelf);
 
     fs.writeFileSync(path.join(dir, 'context-menu.reg.txt'), integration.buildReg(true, '"C:\\Program Files\\Mediavert\\Mediavert.exe"', 'C:\\x.exe,0'));
     log('settings', JSON.stringify(settings.get()));

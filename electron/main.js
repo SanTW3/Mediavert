@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, shell, dialog, nativeImage, Notification, nativeTheme } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, shell, dialog, nativeImage, Notification, nativeTheme, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -41,6 +41,9 @@ function titleBarColors() {
 
 // ID остался от старого названия (MediaShift): так установщик обновляет прежнюю установку,
 // а не ставит вторую программу рядом
+// Chromium перестаёт рисовать окна, которые считает невидимыми. Из-за этого главное окно,
+// заранее показанное прозрачным под «каплей», появлялось пустым на ~150 мс.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 app.setAppUserModelId('com.mediashift.app');
 migrateFromMediaShift();
 
@@ -121,7 +124,7 @@ function broadcast(channel, data) {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, data);
 }
 
-function createMain() {
+function createMain({ autoShow = true } = {}) {
   mainWin = new BrowserWindow({
     width: 1180,
     height: 820,
@@ -135,11 +138,11 @@ function createMain() {
     titleBarOverlay: titleBarColors(),
     show: false,
     autoHideMenuBar: true,
-    webPreferences: { preload: PRELOAD, sandbox: false, additionalArguments: MICA ? ['--mediavert-mica'] : [] },
+    webPreferences: { preload: PRELOAD, sandbox: false, backgroundThrottling: false, additionalArguments: MICA ? ['--mediavert-mica'] : [] },
   });
   mainWin.removeMenu();
   mainWin.loadFile(path.join(ROOT, 'renderer', 'index.html'));
-  mainWin.once('ready-to-show', () => mainWin.show());
+  if (autoShow) mainWin.once('ready-to-show', () => mainWin.show());
   mainWin.webContents.on('will-navigate', (e) => e.preventDefault());
   mainWin.on('close', (e) => {
     if (quitting) return;
@@ -242,6 +245,113 @@ function checkPointer() {
   const inside = p.x >= b.x - 12 && p.x <= b.x + b.width + 12 && p.y >= b.y && p.y <= b.y + b.height + 24;
   leaveTicks = inside ? 0 : leaveTicks + 1;
   if (leaveTicks === 5) shelfWin.webContents.send('shelf:pointer-left');
+}
+
+/* ---------- «перетекание» челки в главное окно ---------- */
+
+let morphWin = null;
+let morphLanded = null;
+let morphAlmost = null;
+
+function prefersReducedMotion() {
+  try {
+    return !!systemPreferences.getAnimationSettings().prefersReducedMotion;
+  } catch {
+    return false;
+  }
+}
+
+// Прозрачное окно на весь экран, сквозь которое проходят клики; рисует только «каплю»
+function ensureMorphWin() {
+  if (morphWin && !morphWin.isDestroyed()) return Promise.resolve(morphWin);
+  morphWin = new BrowserWindow({
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    thickFrame: false,
+    show: false,
+    webPreferences: { preload: PRELOAD, sandbox: false, backgroundThrottling: false },
+  });
+  morphWin.setIgnoreMouseEvents(true);
+  morphWin.setAlwaysOnTop(true, 'screen-saver');
+  morphWin.on('closed', () => (morphWin = null));
+  // Окно показывается один раз и живёт за краем экрана: показ окна Windows анимирует
+  // (оно проявляется ~200 мс), а перенос — нет. Для анимации окно просто переносится на экран.
+  return morphWin.loadFile(path.join(ROOT, 'renderer', 'morph.html')).then(() => {
+    parkMorphWin();
+    morphWin.showInactive();
+    return morphWin;
+  });
+}
+
+function parkMorphWin() {
+  if (!morphWin || morphWin.isDestroyed()) return;
+  const d = screen.getPrimaryDisplay().bounds;
+  morphWin.setBounds({ x: -20000, y: -20000, width: d.width, height: d.height });
+}
+
+const withTimeout = (promise, ms) => Promise.race([promise, new Promise((r) => setTimeout(r, ms))]);
+
+// rect — островок челки в координатах окна челки
+async function openMainFromShelf(rect) {
+  const canMorph =
+    rect && shelfWin && !shelfWin.isDestroyed() && !prefersReducedMotion() &&
+    (!mainWin || mainWin.isDestroyed() || (!mainWin.isVisible() && !mainWin.isMinimized()));
+  if (!canMorph) return showMain();
+
+  if (!mainWin || mainWin.isDestroyed()) {
+    createMain({ autoShow: false });
+    await withTimeout(new Promise((r) => mainWin.once('ready-to-show', r)), 3000);
+  }
+  const display = screen.getPrimaryDisplay().bounds;
+  const target = mainWin.getBounds();
+  const onDisplay =
+    target.x + target.width / 2 > display.x && target.x + target.width / 2 < display.x + display.width &&
+    target.y + target.height / 2 > display.y && target.y + target.height / 2 < display.y + display.height;
+  if (!onDisplay) return showMain();
+
+  const morph = await ensureMorphWin();
+  const sb = shelfWin.getBounds();
+  morph.setBounds(display);
+  morph.moveTop();
+  morph.webContents.send('morph:play', {
+    from: { x: sb.x + rect.x - display.x, y: sb.y + rect.y - display.y, w: rect.width, h: rect.height },
+    to: { x: target.x - display.x, y: target.y - display.y, w: target.width, h: target.height },
+    toColor: nativeTheme.shouldUseDarkColors ? '#17171b' : '#f2f2f5',
+  });
+  // пока капля летит, главное окно уже показано, но прозрачно — успевает отрисоваться
+  mainWin.setOpacity(0);
+  mainWin.showInactive();
+  mainWin.webContents.send('window:prepare');
+  // капля уже нарисована поверх островка — убираем сам островок
+  // островок убираем, когда капля уже нарисована поверх; само окно челки на время
+  // анимации прячем целиком — иначе Windows может на миг показать его старое содержимое
+  setTimeout(() => {
+    if (!shelfWin || shelfWin.isDestroyed()) return;
+    shelfWin.webContents.send('shelf:morph-started');
+    shelfWin.hide();
+  }, 50);
+
+  const landed = new Promise((r) => (morphLanded = r));
+  await withTimeout(new Promise((r) => (morphAlmost = r)), 1500);
+  morphAlmost = null;
+
+  // капля почти приняла форму окна — делаем настоящее окно видимым под ней
+  mainWin.setOpacity(1);
+  mainWin.show();
+  mainWin.focus();
+  mainWin.webContents.send('window:enter');
+
+  await withTimeout(landed, 1000);
+  morphLanded = null;
+  parkMorphWin();
+  if (shelfWin && !shelfWin.isDestroyed() && settings.get().shelf) shelfWin.showInactive();
 }
 
 /* ---------- трей и уведомления ---------- */
@@ -347,10 +457,15 @@ ipcMain.handle('update:install', () => updater.install());
 ipcMain.on('file:reveal', (_e, p) => p && shell.showItemInFolder(p));
 ipcMain.on('file:open', (_e, p) => p && shell.openPath(p));
 ipcMain.on('output:open', openOutput);
-ipcMain.on('main:open', (_e, paths) => {
-  showMain();
-  if (paths.length) sendWhenReady(mainWin, 'files:add', paths);
+ipcMain.on('main:open', (_e, paths, rect) => {
+  openMainFromShelf(rect)
+    .catch(() => showMain())
+    .finally(() => {
+      if (paths?.length) sendWhenReady(mainWin, 'files:add', paths);
+    });
 });
+ipcMain.on('morph:landed', () => morphLanded?.());
+ipcMain.on('morph:almost', () => morphAlmost?.());
 ipcMain.on('shelf:region', (_e, r) => {
   if (!r || !Number.isFinite(r.w) || !Number.isFinite(r.h)) return;
   shelfRegion = { w: r.w, h: r.h };
@@ -420,6 +535,7 @@ if (!app.requestSingleInstanceLock({ argv: process.argv })) {
     });
     createTray();
     if (s.shelf) createShelf();
+    setTimeout(() => ensureMorphWin().catch(() => {}), 3000);
 
     let notifiedVersion = null;
     updater.init((st) => {

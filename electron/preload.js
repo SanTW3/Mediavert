@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { FORMAT_LIST, EXT, TARGETS, KIND_LABEL } = require('../lib/formats');
 
-const EVENTS = ['job:update', 'files:add', 'shelf:pointer-left', 'settings:changed', 'guide:open', 'update:status'];
+const EVENTS = ['job:update', 'files:add', 'shelf:pointer-left', 'settings:changed', 'guide:open', 'update:status', 'morph:play', 'morph:fade', 'window:enter', 'window:prepare', 'shelf:morph-started'];
 
 contextBridge.exposeInMainWorld('api', {
   formats: { FORMAT_LIST, EXT, TARGETS, KIND_LABEL },
@@ -35,7 +35,9 @@ contextBridge.exposeInMainWorld('api', {
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
 
-  openMain: (paths) => ipcRenderer.send('main:open', paths || []),
+  openMain: (paths, rect) => ipcRenderer.send('main:open', paths || [], rect || null),
+  morphLanded: () => ipcRenderer.send('morph:landed'),
+  morphAlmost: () => ipcRenderer.send('morph:almost'),
   setShelfRegion: (rect) => ipcRenderer.send('shelf:region', rect),
 
   getVersion: () => ipcRenderer.invoke('app:version'),

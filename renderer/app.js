@@ -354,6 +354,16 @@ function installUpdate() {
 $('#updateAction').onclick = () => (state.update?.state === 'ready' ? installUpdate() : api.checkUpdates());
 $('#updatePill').onclick = installUpdate;
 api.on('update:status', renderUpdate);
+
+api.on('window:prepare', () => document.body.classList.add('preparing'));
+// окно появилось из челки — мягко проявляем содержимое
+api.on('window:enter', () => {
+  document.body.classList.remove('entering');
+  void document.body.offsetWidth;
+  document.body.classList.remove('preparing');
+  document.body.classList.add('entering');
+  setTimeout(() => document.body.classList.remove('entering'), 500);
+});
 api.updateStatus().then(renderUpdate);
 api.getVersion().then((v) => ($('#appVersion').textContent = v));
 

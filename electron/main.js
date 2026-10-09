@@ -330,13 +330,10 @@ async function openMainFromShelf(rect) {
   mainWin.showInactive();
   mainWin.webContents.send('window:prepare');
   // капля уже нарисована поверх островка — убираем сам островок
-  // островок убираем, когда капля уже нарисована поверх; само окно челки на время
-  // анимации прячем целиком — иначе Windows может на миг показать его старое содержимое
-  setTimeout(() => {
-    if (!shelfWin || shelfWin.isDestroyed()) return;
-    shelfWin.webContents.send('shelf:morph-started');
-    shelfWin.hide();
-  }, 50);
+  // островок убираем, когда капля уже нарисована поверх.
+  // Окно челки НЕ скрываем: после hide()/showInactive() Windows перестаёт
+  // нормально передавать ему клики, и челка больше не открывается.
+  setTimeout(() => shelfWin && !shelfWin.isDestroyed() && shelfWin.webContents.send('shelf:morph-started'), 50);
 
   const landed = new Promise((r) => (morphLanded = r));
   await withTimeout(new Promise((r) => (morphAlmost = r)), 1500);
@@ -351,7 +348,6 @@ async function openMainFromShelf(rect) {
   await withTimeout(landed, 1000);
   morphLanded = null;
   parkMorphWin();
-  if (shelfWin && !shelfWin.isDestroyed() && settings.get().shelf) shelfWin.showInactive();
 }
 
 /* ---------- трей и уведомления ---------- */

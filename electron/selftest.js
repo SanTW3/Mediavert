@@ -32,6 +32,7 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
 
   async function morphTest(main, shelf) {
     await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    if (process.env.MEDIAVERT_MAXIMIZED) { main.maximize(); await wait(400); }
     main.hide();
     await shelf.webContents.executeJavaScript(`setMode('activity')`);
     await wait(350); // меньше, чем челка ждёт ухода курсора
@@ -49,9 +50,35 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     const morph = BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Mediavert Morph');
     log('after morph: main visible', main.isVisible(), 'focused', main.isFocused(), '| morph parked', morph ? morph.getBounds().x < -10000 : 'none',
       '| shelf mode', await shelf.webContents.executeJavaScript('mode'), '| opacity', main.getOpacity());
+    // челка после анимации: видна ли, где её область, ловит ли курсор
+    await wait(1200);
+    const sb = shelf.getBounds();
+    const cx = sb.x + Math.round(sb.width / 2);
+    const hit = (y) => require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'hit.ps1'), String(cx), String(y)], { encoding: 'utf8' }).stdout.trim();
+    log('shelf after morph: visible', shelf.isVisible(), 'alwaysOnTop', shelf.isAlwaysOnTop(), 'bounds', JSON.stringify(sb), '| hit y=3:', hit(3));
+    await shelf.webContents.executeJavaScript(`setMode('activity')`);
+    await wait(500);
+    log('shelf reopened by click-equivalent: mode', await shelf.webContents.executeJavaScript('mode'), '| hit y=40:', hit(40));
     await wait(600);
     const b = main.getBounds();
     require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'after-morph.png')].map(String));
+  }
+
+  // настоящие клики мышью: полоска челки → «Открыть Mediavert» → снова полоска
+  async function realClickTest(main, shelf) {
+    const click = (x, y) => require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'realclick.ps1'), String(x), String(y)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).stdout.trim();
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    main.hide();
+    await wait(500);
+    const sb = shelf.getBounds();
+    const cx = sb.x + Math.round(sb.width / 2);
+    log('1 strip:', click(cx, 3)); await wait(700);
+    log('  mode', await shelf.webContents.executeJavaScript('mode'));
+    const r = await shelf.webContents.executeJavaScript(`(() => { const b = document.querySelector('#openApp').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+    log('2 open button:', click(sb.x + Math.round(r.x), sb.y + Math.round(r.y))); await wait(1800);
+    log('  main visible', main.isVisible(), '| shelf visible', shelf.isVisible(), '| mode', await shelf.webContents.executeJavaScript('mode'));
+    log('3 strip again:', click(cx, 3)); await wait(700);
+    log('  mode after second click', await shelf.webContents.executeJavaScript('mode'), '| island class', await shelf.webContents.executeJavaScript('island.className'));
   }
   const finishAll = () =>
     new Promise((resolve) => {
@@ -123,7 +150,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      await morphTest(main, shelf2);
+      if (process.env.MEDIAVERT_REALCLICK) await realClickTest(main, shelf2);
+      else await morphTest(main, shelf2);
       log('DONE');
       return app.exit(0);
     }

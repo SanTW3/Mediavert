@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Mediavert Shelf</title>
+  <link rel="stylesheet" href="shelf.css">
+</head>
+<body>
+  <div id="island" class="idle">
+    <!-- компактный статус -->
+    <div class="busy-view">
+      <span class="spinner"></span>
+      <span id="busyText">Конвертирую…</span>
+      <div class="mini-bar"><span id="busyBar"></span></div>
+    </div>
+
+    <!-- во время перетаскивания: выбор формата -->
+    <div class="drop-view">
+      <div class="head">
+        <span>Отпустите файл на нужный формат <b id="dropCount"></b></span>
+        <span class="muted">Mediavert</span>
+      </div>
+      <div id="tiles"></div>
+    </div>
+
+    <!-- результаты -->
+    <div class="activity-view">
+      <div class="head">
+        <span>Готовые файлы <span class="muted">— тащите прямо в DAW или папку</span></span>
+        <span class="head-actions">
+          <button id="clear">Очистить</button>
+          <button id="openApp">Открыть Mediavert</button>
+        </span>
+      </div>
+      <ul id="jobs"></ul>
+      <p class="empty" id="empty">Перетащите файл к верхнему краю экрана — сюда — и выберите формат.<br>Настройки качества берутся из главного окна.</p>
+    </div>
+  </div>
+  <script src="accent.js"></script>
+  <script src="shelf.js"></script>
+</body>
+</html>

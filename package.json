@@ -1,0 +1,72 @@
+{
+  "name": "mediavert",
+  "productName": "Mediavert",
+  "version": "2.5.0",
+  "description": "Конвертер аудио, видео и изображений для музыкантов и всех остальных",
+  "author": "Mediavert",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "assets": "node scripts/make-assets.js",
+    "dist": "node scripts/make-assets.js && electron-builder --win --x64 --publish never",
+    "release": "node scripts/check-release.js && node scripts/make-assets.js && electron-builder --win --x64 --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.mediashift.app",
+    "productName": "Mediavert",
+    "copyright": "Mediavert",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "!electron/selftest.js",
+      "renderer/**/*",
+      "lib/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mediavert",
+      "runAfterFinish": true,
+      "include": "build/installer.nsh",
+      "artifactName": "Mediavert-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SanTW3",
+        "repo": "Mediavert",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

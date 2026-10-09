@@ -1,0 +1,12 @@
+# зависимости — восстанавливаются через npm install
+node_modules/
+
+# результаты сборки — выкладываются в GitHub Releases, а не в репозиторий
+dist/
+
+# временные файлы
+tmp/
+output/
+*.log
+.DS_Store
+Thumbs.db

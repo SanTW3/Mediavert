@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'">
+  <title>Mediavert</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- линейные иконки -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.8"/><circle cx="12" cy="17.2" r=".6" fill="currentColor"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2h7.2a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 14.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.8v12.4a.8.8 0 0 0 1.2.7l9.6-6.2a.8.8 0 0 0 0-1.4L9.2 5.1A.8.8 0 0 0 8 5.8z" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"/></symbol>
+      <symbol id="i-retry" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M19 4.5V8h-3.5"/></symbol>
+      <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2.5l1.8-5 3 10 2.6-7.5 1.7 4.2 1.6-1.7H21"/></symbol>
+      <symbol id="i-film" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M8 5.5v13M16 5.5v13M3.5 12h4.5M16 12h4.5"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="9.5" r="1.6"/><path d="m4 17 5-4.5 3.5 3 3-2.5 4.5 4"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="titlebar">
+    <div class="app-title">
+      <img src="../assets/icon.png" width="20" height="20" alt="">
+      <span>Mediavert</span>
+    </div>
+    <div class="toolbar">
+      <button class="tool update-pill" id="updatePill" hidden title="Новая версия скачана — перезапустить и обновить"><svg><use href="#i-retry"/></svg><span id="updatePillText">Обновить</span></button>
+      <button class="tool" id="openGuide" title="Короткий гайд по приложению"><svg><use href="#i-help"/></svg><span>Как пользоваться</span></button>
+      <button class="tool" id="openFolder" title="Открыть папку с готовыми файлами"><svg><use href="#i-folder"/></svg><span>Папка</span></button>
+      <button class="tool accent" id="openPrefs" title="Куда сохранять, челка, меню Проводника, автозапуск"><svg><use href="#i-sliders"/></svg><span>Настройки</span></button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main class="library">
+      <label class="drop" id="drop">
+        <input type="file" id="picker" multiple hidden>
+        <div class="drop-art"><svg><use href="#i-upload"/></svg></div>
+        <div class="drop-text">
+          <strong>Перетащите файлы сюда</strong>
+          <span>или нажмите, чтобы выбрать · аудио, видео и картинки</span>
+        </div>
+        <div class="drop-kinds">
+          <span class="kind audio"><svg><use href="#i-wave"/></svg>WAV · MP3 · FLAC · AIFF</span>
+          <span class="kind video"><svg><use href="#i-film"/></svg>MP4 · MOV · GIF</span>
+          <span class="kind image"><svg><use href="#i-image"/></svg>PNG · JPG · WebP</span>
+        </div>
+      </label>
+
+      <div class="list-head">
+        <span id="counter">Файлов нет</span>
+        <div class="list-actions">
+          <button class="link" id="clearDone">Убрать готовые</button>
+          <button class="link" id="clearAll">Очистить всё</button>
+        </div>
+      </div>
+      <ul class="files" id="files"></ul>
+      <p class="hint center" id="dragHint" hidden>Готовые файлы можно перетащить мышкой прямо в DAW, мессенджер или папку</p>
+
+      <div class="actionbar">
+        <button class="primary big" id="convertAll" disabled>Конвертировать</button>
+      </div>
+    </main>
+
+    <aside class="inspector settings">
+      <nav class="segmented tabs" role="tablist">
+        <span class="seg-thumb"></span>
+        <button class="tab active" data-tab="audio">Аудио</button>
+        <button class="tab" data-tab="video">Видео</button>
+        <button class="tab" data-tab="image">Фото</button>
+      </nav>
+
+      <!-- АУДИО -->
+      <div class="panel active" data-panel="audio">
+        <h3 class="group-title">Пресеты</h3>
+        <div class="presets" id="presets"></div>
+
+        <h3 class="group-title">Формат</h3>
+        <div class="rows">
+          <label class="row"><span>По умолчанию</span><select data-default="audio"></select></label>
+          <label class="row"><span>Частота</span>
+            <select name="sampleRate">
+              <option value="">Как в исходнике</option>
+              <option value="44100">44.1 кГц</option>
+              <option value="48000">48 кГц</option>
+              <option value="88200">88.2 кГц</option>
+              <option value="96000">96 кГц</option>
+              <option value="192000">192 кГц</option>
+              <option value="32000">32 кГц</option>
+              <option value="22050">22.05 кГц</option>
+            </select>
+          </label>
+          <label class="row"><span>Разрядность<small>WAV, AIFF, FLAC</small></span>
+            <select name="bitDepth">
+              <option value="16">16 бит</option>
+              <option value="24">24 бит</option>
+              <option value="32f">32 бит float</option>
+            </select>
+          </label>
+          <label class="row"><span>Каналы</span>
+            <select name="channels">
+              <option value="">Как в исходнике</option>
+              <option value="2">Стерео</option>
+              <option value="1">Моно</option>
+            </select>
+          </label>
+          <label class="row"><span>Битрейт<small>MP3, AAC, OGG, Opus</small></span>
+            <select name="bitrate">
+              <option value="320">320 kbps</option>
+              <option value="256">256 kbps</option>
+              <option value="192">192 kbps</option>
+              <option value="160">160 kbps</option>
+              <option value="128">128 kbps</option>
+              <option value="96">96 kbps</option>
+            </select>
+          </label>
+        </div>
+
+        <h3 class="group-title">Обработка</h3>
+        <div class="rows">
+          <label class="row"><span>Нормализация громкости</span><input type="checkbox" class="switch" name="normalize"></label>
+          <label class="row sub" data-depends="normalize"><span>Цель</span>
+            <select name="lufs">
+              <option value="-14">−14 LUFS · стриминг</option>
+              <option value="-16">−16 LUFS · подкасты</option>
+              <option value="-11">−11 LUFS · громко</option>
+              <option value="-9">−9 LUFS · клуб / EDM</option>
+              <option value="-8">−8 LUFS · очень громко</option>
+              <option value="-23">−23 LUFS · ТВ / EBU R128</option>
+            </select>
+          </label>
+          <label class="row"><span>Срезать тишину<small>в начале и в конце</small></span><input type="checkbox" class="switch" name="removeSilence"></label>
+          <label class="row"><span>Fade in</span><span class="unit"><input type="number" name="fadeIn" min="0" max="60" step="0.1" placeholder="0">сек</span></label>
+          <label class="row"><span>Fade out</span><span class="unit"><input type="number" name="fadeOut" min="0" max="60" step="0.1" placeholder="0">сек</span></label>
+        </div>
+      </div>
+
+      <!-- ВИДЕО -->
+      <div class="panel" data-panel="video">
+        <h3 class="group-title">Формат</h3>
+        <div class="rows">
+          <label class="row"><span>По умолчанию</span><select data-default="video"></select></label>
+          <label class="row"><span>Разрешение</span>
+            <select name="height">
+              <option value="">Как в исходнике</option>
+              <option value="2160">2160p (4K)</option>
+              <option value="1440">1440p</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="360">360p</option>
+            </select>
+          </label>
+          <label class="row"><span>Кадров в секунду</span>
+            <select name="fps">
+              <option value="">Как в исходнике</option>
+              <option value="60">60</option>
+              <option value="30">30</option>
+              <option value="25">25</option>
+              <option value="24">24</option>
+              <option value="15">15</option>
+              <option value="10">10</option>
+            </select>
+          </label>
+          <label class="row"><span>Качество</span>
+            <select name="quality">
+              <option value="high">Высокое</option>
+              <option value="medium">Среднее</option>
+              <option value="low">Компактное</option>
+            </select>
+          </label>
+          <label class="row"><span>Убрать звук</span><input type="checkbox" class="switch" name="mute"></label>
+        </div>
+        <p class="footnote">Чтобы вытащить звук из видео, выберите у файла WAV или MP3 — применятся настройки вкладки «Аудио». PNG/JPG сохранит кадр в момент «Начала». GIF без указанного разрешения — шириной 480 px.</p>
+      </div>
+
+      <!-- КАРТИНКИ -->
+      <div class="panel" data-panel="image">
+        <h3 class="group-title">Формат</h3>
+        <div class="rows">
+          <label class="row"><span>По умолчанию</span><select data-default="image"></select></label>
+          <label class="row"><span>Ширина</span><span class="unit"><input type="number" name="width" min="8" max="16384" placeholder="авто">px</span></label>
+          <label class="row column"><span>Качество JPG и WebP <b id="qVal">90</b></span><input type="range" name="imageQuality" min="1" max="100" value="90"></label>
+        </div>
+        <p class="footnote">ICO автоматически уменьшается до 256×256 — подойдёт для иконок. Обложку для релиза удобно делать в JPG 3000 px.</p>
+      </div>
+
+      <div class="trim">
+        <h3 class="group-title">Обрезка <small>для всех файлов в списке</small></h3>
+        <div class="rows">
+          <label class="row"><span>Начало</span><input type="text" name="start" placeholder="0:00"></label>
+          <label class="row"><span>Конец</span><input type="text" name="end" placeholder="до конца"></label>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- НАСТРОЙКИ -->
+  <dialog class="modal" id="prefsDialog">
+    <div class="modal-head">
+      <h2>Настройки</h2>
+      <button class="icon-btn round" data-close title="Закрыть"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <h3 class="group-title">Куда сохранять готовые файлы</h3>
+      <div class="rows">
+        <label class="row"><span>Рядом с исходным файлом<small>beat.mp3 → beat.wav в той же папке</small></span><input type="radio" name="outMode" data-pref="outputMode" value="beside"></label>
+        <label class="row"><span>В отдельную папку<small id="outDir"></small></span><input type="radio" name="outMode" data-pref="outputMode" value="folder"></label>
+        <div class="row"><span></span><button class="link" id="pickDir">Выбрать папку…</button></div>
+      </div>
+
+      <h3 class="group-title">Интеграция с Windows</h3>
+      <div class="rows">
+        <label class="row"><span>«Челка» сверху экрана<small>Тащите файл к верхнему краю — появятся форматы</small></span><input type="checkbox" class="switch" data-pref="shelf"></label>
+        <label class="row"><span>Меню Проводника<small>Правый клик → «Конвертировать в…». В Windows 11 — в «Показать дополнительные параметры»</small></span><input type="checkbox" class="switch" data-pref="contextMenu"></label>
+        <label class="row"><span>Запускать вместе с Windows<small>Тихо стартует в трее</small></span><input type="checkbox" class="switch" data-pref="autostart"></label>
+      </div>
+      <p class="hint pref-error"></p>
+
+      <h3 class="group-title">Цвет акцента</h3>
+      <div class="rows">
+        <div class="row accent-row">
+          <div class="swatches mini" id="prefSwatches"></div>
+          <button class="link" id="openAccent">Свой цвет…</button>
+        </div>
+      </div>
+
+      <h3 class="group-title">Оформление</h3>
+      <div class="segmented theme-seg" id="themeSeg">
+        <span class="seg-thumb"></span>
+        <button data-theme="system">Как в системе</button>
+        <button data-theme="light">Светлое</button>
+        <button data-theme="dark">Тёмное</button>
+      </div>
+
+      <h3 class="group-title">Обновления</h3>
+      <div class="rows">
+        <div class="row">
+          <span>Mediavert <b id="appVersion"></b><small id="updateText">—</small></span>
+          <button class="secondary small-btn" id="updateAction">Проверить</button>
+        </div>
+        <label class="row"><span>Проверять автоматически<small>Новая версия скачивается в фоне и ставится при перезапуске</small></span><input type="checkbox" class="switch" data-pref="autoUpdate"></label>
+      </div>
+
+      <p class="footnote">Качество для челки и меню Проводника берётся из вкладок «Аудио», «Видео» и «Фото» в главном окне.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="link" id="replayGuide">Показать гайд ещё раз</button>
+      <button class="primary" data-close autofocus>Готово</button>
+    </div>
+  </dialog>
+
+  <!-- ГАЙД -->
+  <dialog class="modal guide" id="guideDialog">
+    <button class="link guide-skip" data-close>Пропустить</button>
+    <div class="slides">
+      <section class="slide active">
+        <div class="art art-welcome">
+          <img src="../assets/icon.png" width="84" height="84" alt="">
+          <div class="kinds">
+            <span class="kind audio"><svg><use href="#i-wave"/></svg>Аудио</span>
+            <span class="kind video"><svg><use href="#i-film"/></svg>Видео</span>
+            <span class="kind image"><svg><use href="#i-image"/></svg>Фото</span>
+          </div>
+        </div>
+        <h2>Добро пожаловать в Mediavert</h2>
+        <p>Конвертер для музыкантов и не только: WAV, MP3, FLAC, AIFF, видео, GIF, картинки. Всё работает <b>прямо на компьютере</b> — без интернета и загрузок на сервер.</p>
+        <p class="muted">Покажем за минуту три способа конвертировать.</p>
+      </section>
+
+      <section class="slide">
+        <div class="art art-main">
+          <div class="m-drop">Перетащите файлы сюда</div>
+          <div class="m-row"><span class="m-badge">MP3</span><span class="m-name">beat.mp3</span><span class="m-select">WAV ⌄</span></div>
+          <div class="m-btn">Конвертировать</div>
+        </div>
+        <h2>Главное окно</h2>
+        <ol>
+          <li><b>Перетащите файлы</b> в окно — можно сразу пачку.</li>
+          <li>У каждого файла <b>выберите формат</b>, справа — качество и <b>пресеты</b>.</li>
+          <li>Нажмите <b>«Конвертировать»</b>. Готовый файл можно <b>перетащить мышкой</b> прямо в DAW или папку.</li>
+        </ol>
+      </section>
+
+      <section class="slide">
+        <div class="art art-shelf">
+          <div class="screen">
+            <div class="notch">
+              <span class="chip c-audio">WAV</span><span class="chip c-audio hot">MP3</span><span class="chip c-audio">FLAC</span><span class="chip c-video">MP4</span><span class="chip c-video">GIF</span>
+            </div>
+            <div class="dragged">vocal.wav</div>
+          </div>
+        </div>
+        <h2>«Челка» сверху экрана</h2>
+        <p>Наверху по центру экрана есть тонкая полоска. <b>Тащите любой файл к верхнему краю</b> — она раскроется, отпустите файл на нужный формат.</p>
+        <p>Когда готово — <b>вытащите результат прямо из челки</b> в FL Studio, Ableton или Telegram. Клик по полоске покажет последние файлы.</p>
+        <div class="rows"><label class="row"><span>Включить челку</span><input type="checkbox" class="switch" data-pref="shelf"></label></div>
+      </section>
+
+      <section class="slide">
+        <div class="art art-menu">
+          <div class="ctx">
+            <div>Открыть</div>
+            <div>Копировать</div>
+            <div class="sel">Конвертировать в… <span>›</span></div>
+            <div>Свойства</div>
+          </div>
+          <div class="ctx sub">
+            <div class="sel">WAV</div><div>MP3</div><div>FLAC</div><div>AIFF</div>
+          </div>
+        </div>
+        <h2>Правый клик в Проводнике</h2>
+        <p>Щёлкните правой кнопкой по файлу → <b>«Конвертировать в…»</b> → формат. Работает и с несколькими выделенными файлами.</p>
+        <p class="muted">В Windows 11 пункт находится в «Показать дополнительные параметры» (или Shift+F10).</p>
+        <div class="rows"><label class="row"><span>Добавить пункт в меню Проводника</span><input type="checkbox" class="switch" data-pref="contextMenu"></label></div>
+        <p class="hint pref-error"></p>
+      </section>
+
+      <section class="slide">
+        <div class="art art-prefs">
+          <div class="fake-top">
+            <span class="fake-btn"><svg><use href="#i-help"/></svg>Как пользоваться</span>
+            <span class="fake-btn"><svg><use href="#i-folder"/></svg>Папка</span>
+            <span class="fake-btn accent"><svg><use href="#i-sliders"/></svg>Настройки</span>
+          </div>
+          <div class="tray">⌃ <img src="../assets/icon.png" width="18" height="18" alt=""> 12:00</div>
+        </div>
+        <h2>Настройки и трей</h2>
+        <p>Кнопка <b>«Настройки»</b> вверху окна: куда сохранять файлы (по умолчанию — рядом с исходником), челка, меню Проводника, тема оформления.</p>
+        <p>Если закрыть окно, Mediavert продолжит работать <b>в трее</b> возле часов — челка и меню останутся доступны.</p>
+        <div class="rows"><label class="row"><span>Запускать вместе с Windows</span><input type="checkbox" class="switch" data-pref="autostart"></label></div>
+      </section>
+    </div>
+    <div class="guide-foot">
+      <button class="secondary" id="guidePrev">Назад</button>
+      <div class="dots" id="guideDots"></div>
+      <button class="primary" id="guideNext" autofocus>Далее</button>
+    </div>
+  </dialog>
+
+  <!-- ВЫБОР ЦВЕТА -->
+  <dialog class="modal accent-dlg" id="accentDialog">
+    <div class="modal-head">
+      <h2 id="accentTitle">Цвет оформления</h2>
+      <button class="icon-btn round" data-close title="Закрыть"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <p class="lead" id="accentLead">Выберите акцентный цвет — им подсвечиваются кнопки, переключатели и челка.</p>
+      <div class="picker">
+        <div class="wheel-wrap" id="wheelWrap">
+          <canvas id="wheel" width="440" height="440"></canvas>
+          <div class="knob" id="knob"></div>
+        </div>
+        <div class="picker-side">
+          <label class="bright">
+            <span>Яркость</span>
+            <input type="range" id="lightness" min="30" max="72" step="1">
+          </label>
+          <div class="swatches" id="swatches"></div>
+          <label class="hex-row">
+            <span class="dot" id="accentDot"></span>
+            <input type="text" id="hexInput" maxlength="7" spellcheck="false" placeholder="#6a4dff">
+          </label>
+          <div class="preview" aria-hidden="true">
+            <span class="pv-btn">Конвертировать</span>
+            <span class="pv-switch"></span>
+            <span class="pv-chip">DAW · WAV 24/48</span>
+            <span class="pv-link">Выбрать папку…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="link" id="accentReset">Вернуть фиолетовый</button>
+      <div class="foot-right">
+        <button class="secondary" id="accentCancel">Отмена</button>
+        <button class="primary" id="accentSave" autofocus>Готово</button>
+      </div>
+    </div>
+  </dialog>
+
+  <template id="rowTpl">
+    <li class="file">
+      <div class="ficon"></div>
+      <div class="fmain">
+        <div class="fname"></div>
+        <div class="fmeta"></div>
+        <div class="bar"><span></span></div>
+      </div>
+      <select class="ftarget"></select>
+      <div class="factions"></div>
+    </li>
+  </template>
+
+  <script src="accent.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

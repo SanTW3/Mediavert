@@ -1,0 +1,196 @@
+:root {
+  --bg: #0c0c11;
+  --line: rgba(255, 255, 255, .08);
+  --text: #ecedf5;
+  --muted: #8b90a8;
+  --accent: #8670ff;
+  --accent-2: #a796ff;
+  --ok: #3ccf91;
+  --err: #ff6b7a;
+  --audio: #ff9f43;
+  --video: #4dabf7;
+  --image: #3ccf91;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--text);
+}
+
+body { display: flex; justify-content: center; align-items: flex-start; }
+
+button { font: inherit; color: inherit; cursor: pointer; border: 0; }
+
+/* ---------- островок ---------- */
+
+#island {
+  position: relative;
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-top: 0;
+  overflow: hidden;
+  /* раскрытие — с лёгким пружинящим «доводом» */
+  transition:
+    width .34s cubic-bezier(.32, 1.25, .5, 1),
+    height .34s cubic-bezier(.32, 1.25, .5, 1),
+    border-radius .3s ease,
+    box-shadow .3s ease,
+    background .2s ease;
+  will-change: width, height;
+}
+/* сворачивание — сначала гаснет содержимое, затем плавное сжатие без «отскока» */
+#island.shrinking {
+  transition:
+    width .28s cubic-bezier(.4, 0, .2, 1) .1s,
+    height .28s cubic-bezier(.4, 0, .2, 1) .1s,
+    border-radius .28s ease .1s,
+    box-shadow .2s ease,
+    background .2s ease .1s;
+}
+
+#island.idle {
+  width: 150px;
+  height: 6px;
+  border-radius: 0 0 6px 6px;
+  background: #22222e;
+  cursor: pointer;
+}
+/* без внешнего свечения: оно обрезалось бы краем видимой области */
+body:hover #island.idle { background: var(--accent); height: 8px; }
+
+#island.busy {
+  width: 360px;
+  height: 46px;
+  border-radius: 0 0 22px 22px;
+  border-color: var(--line);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, .35);
+  cursor: pointer;
+}
+
+#island.drop, #island.activity {
+  width: 660px;
+  height: 312px;
+}
+#island.drop { height: var(--drop-h, 312px); }
+#island.drop, #island.activity {
+  border-radius: 0 0 28px 28px;
+  border-color: var(--line);
+  box-shadow: 0 10px 16px rgba(0, 0, 0, .4);
+}
+
+/* содержимое имеет постоянную ширину и не перестраивается, пока островок меняет размер */
+.busy-view, .drop-view, .activity-view {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.busy-view { width: 360px; height: 46px; }
+.drop-view, .activity-view { width: 660px; height: 312px; }
+#island.busy .busy-view,
+#island.drop .drop-view,
+#island.activity .activity-view {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity .2s ease .14s;
+}
+/* при сжатии новое содержимое (например, статус) появляется только после анимации,
+   а старое гаснет сразу — правило выше без задержки */
+#island.shrinking.busy .busy-view,
+#island.shrinking.drop .drop-view,
+#island.shrinking.activity .activity-view { transition-delay: .32s; }
+
+/* ---------- busy ---------- */
+
+.busy-view { display: flex; align-items: center; gap: 10px; padding: 0 18px; }
+#busyText { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-bar { width: 80px; height: 4px; border-radius: 4px; background: #24263a; overflow: hidden; }
+.mini-bar span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid #33354a; border-top-color: var(--accent-2);
+  animation: spin .8s linear infinite;
+}
+.busy-view.finished .spinner { animation: none; border-color: var(--ok); background: var(--ok); }
+.busy-view.finished .mini-bar { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- общие ---------- */
+
+.head {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 12px 22px 8px;
+  font-weight: 600;
+}
+.muted { color: var(--muted); font-weight: 400; }
+.head-actions { display: flex; gap: 6px; }
+.head-actions button { background: #1c1e2b; border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; font-size: 12px; font-weight: 400; }
+.head-actions button:hover { border-color: var(--accent); }
+
+/* ---------- drop ---------- */
+
+#tiles { padding: 4px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
+.group { display: flex; align-items: center; gap: 8px; }
+.group-label { width: 56px; flex: none; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.group-tiles { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+
+.tile {
+  min-width: 62px;
+  padding: 11px 10px;
+  border-radius: 12px;
+  background: #171925;
+  border: 1px solid var(--line);
+  text-align: center;
+  font-weight: 600;
+  transition: transform .1s, background .1s, border-color .1s;
+}
+.tile small { display: block; font-weight: 400; color: var(--muted); font-size: 10px; margin-top: 1px; }
+.tile[data-kind="audio"] { color: var(--audio); }
+.tile[data-kind="video"] { color: var(--video); }
+.tile[data-kind="image"] { color: var(--image); }
+.tile.hot { background: var(--accent); border-color: var(--accent-2); color: var(--on-accent); transform: scale(1.06); }
+.tile.hot small { color: var(--on-accent); opacity: .75; }
+.tile.open-app { color: var(--text); }
+
+/* ---------- activity ---------- */
+
+#jobs { list-style: none; margin: 0; padding: 0 14px 12px; overflow-y: auto; height: 252px; display: flex; flex-direction: column; gap: 6px; }
+#jobs::-webkit-scrollbar { width: 6px; }
+#jobs::-webkit-scrollbar-thumb { background: #2c2f44; border-radius: 3px; }
+
+.job {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 8px 10px; border-radius: 12px; background: #141621; border: 1px solid transparent;
+}
+.job.done { cursor: grab; }
+.job.done:hover { border-color: var(--accent); }
+.job-icon {
+  width: 38px; height: 38px; border-radius: 10px; background: #1f2232;
+  display: grid; place-items: center; font-size: 10px; font-weight: 700; text-transform: uppercase;
+}
+.job-icon[data-kind="audio"] { color: var(--audio); }
+.job-icon[data-kind="video"] { color: var(--video); }
+.job-icon[data-kind="image"] { color: var(--image); }
+.job-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.job-meta { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-meta.err { color: var(--err); }
+.job-meta.ok { color: var(--ok); }
+.job .bar { height: 3px; background: #24263a; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.job .bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+.job-actions { display: flex; gap: 4px; }
+.job-actions button { background: #1f2232; border-radius: 8px; padding: 5px 8px; font-size: 12px; }
+.job-actions button:hover { background: #2a2d42; }
+
+.empty { color: var(--muted); text-align: center; margin: 70px 30px 0; line-height: 1.6; }

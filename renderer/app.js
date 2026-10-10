@@ -175,6 +175,24 @@ function applyAccentSetting(accent) {
   try { localStorage.setItem('accent', accent || ''); } catch {}
 }
 
+const LAYER_HINT = {
+  top: 'Всегда видна, даже над развёрнутыми окнами',
+  desktop: 'Окна её закрывают — видна, когда верх экрана свободен',
+};
+function syncLayer(s) {
+  const layer = s.shelfLayer === 'desktop' ? 'desktop' : 'top';
+  $('#layerRow').hidden = !s.shelf;
+  $('#layerHint').textContent = LAYER_HINT[layer];
+  $$('#layerSeg button').forEach((b) => b.classList.toggle('active', b.dataset.layer === layer));
+  moveThumb($('#layerSeg'));
+}
+$$('#layerSeg button').forEach((b) =>
+  b.addEventListener('click', () => {
+    syncLayer({ ...state.settings, shelfLayer: b.dataset.layer });
+    setPref({ shelfLayer: b.dataset.layer });
+  }),
+);
+
 function syncTheme(theme) {
   const seg = $('#themeSeg');
   $$('button', seg).forEach((b) => b.classList.toggle('active', b.dataset.theme === (theme || 'system')));
@@ -208,6 +226,7 @@ function applyPrefsOnly(s) {
   }
   $('#outDir').textContent = s.outputDir;
   syncTheme(s.theme);
+  syncLayer(s);
   applyAccentSetting(s.accent);
 }
 
@@ -264,6 +283,7 @@ for (const dlg of [prefsDialog, guideDialog, accentDialog]) {
 $('#openPrefs').onclick = () => {
   prefsDialog.showModal();
   moveThumb($('#themeSeg'));
+  moveThumb($('#layerSeg'));
 };
 
 function showSlide(i) {

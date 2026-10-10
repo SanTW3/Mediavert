@@ -518,6 +518,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 8px 0 2p
 .pv-link { color: var(--accent-text); font-weight: 500; font-size: 12px; }
 .foot-right { display: flex; gap: 8px; }
 
+/* выбор слоя челки */
+.layer-row { flex-wrap: wrap; }
+.small-seg { flex: none; }
+.small-seg button { height: 26px; padding: 0 10px; font-size: 12px; }
+
 /* обновления */
 .update-pill { background: var(--accent); color: var(--on-accent); font-weight: 600; animation: pill-in .4s cubic-bezier(.3, 1.3, .5, 1); }
 .update-pill:hover { background: var(--accent-hover); color: var(--on-accent); }

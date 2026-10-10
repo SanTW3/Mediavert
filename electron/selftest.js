@@ -80,6 +80,53 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     log('3 strip again:', click(cx, 3)); await wait(700);
     log('  mode after second click', await shelf.webContents.executeJavaScript('mode'), '| island class', await shelf.webContents.executeJavaScript('island.className'));
   }
+
+  // слой челки: поверх окон / только на рабочем столе
+  async function layerTest(main, shelf) {
+    const hit = (y) => {
+      const b = shelf.getBounds();
+      return require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'hit.ps1'), String(b.x + Math.round(b.width / 2)), String(y)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).stdout.trim();
+    };
+    const setLayer = (v) => main.webContents.executeJavaScript(`setPref({ shelfLayer: '${v}' })`);
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    main.maximize(); main.show(); main.focus();
+    await wait(800);
+    const d = require('electron').screen.getPrimaryDisplay().bounds;
+    // как выглядит полоска в обычном состоянии на тёмном и светлом окне
+    await shelf.webContents.executeJavaScript("clearTimeout(finishedTimer); finishedTimer = null; setMode('idle')");
+    for (const th of ['dark', 'light']) {
+      await main.webContents.executeJavaScript(`setPref({ theme: '${th}' })`);
+      await wait(900);
+      require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), d.x + d.width / 2 - 140, d.y, 280, 24, path.join(out, `pill-${th}.png`)].map(String));
+    }
+    await main.webContents.executeJavaScript(`setPref({ theme: 'system' })`);
+
+    await setLayer('top'); await wait(400);
+    log('layer top, maximized window:', hit(3));
+
+    const intruder = new BrowserWindow({ x: d.x + d.width / 2 - 200, y: d.y, width: 400, height: 120, frame: false, alwaysOnTop: true, focusable: false, show: false, title: 'Intruder' });
+    intruder.setAlwaysOnTop(true, 'screen-saver');
+    intruder.loadURL('data:text/html,<body style=background:%23c33></body>');
+    await new Promise((r) => intruder.once('ready-to-show', r));
+    intruder.showInactive(); intruder.moveTop();
+    await wait(300);
+    log('layer top, right after topmost intruder:', hit(3));
+    await wait(2500);
+    log('layer top, 2.5s later:', hit(3));
+    intruder.destroy();
+
+    await setLayer('desktop'); await wait(400);
+    main.focus(); await wait(400);
+    log('layer desktop, maximized window focused:', hit(3));
+    main.unmaximize(); main.setBounds({ x: d.x + 200, y: d.y + 200, width: 900, height: 600 }); await wait(500);
+    log('layer desktop, top of screen free:', hit(3));
+    log('tray/settings value:', JSON.stringify(settings.get().shelfLayer));
+    await main.webContents.executeJavaScript(`document.querySelector('#openPrefs').click()`);
+    await wait(500);
+    const b = main.getBounds();
+    require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'prefs-layer.png')].map(String));
+    await setLayer('top');
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -150,7 +197,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_REALCLICK) await realClickTest(main, shelf2);
+      if (process.env.MEDIAVERT_LAYER) await layerTest(main, shelf2);
+      else if (process.env.MEDIAVERT_REALCLICK) await realClickTest(main, shelf2);
       else await morphTest(main, shelf2);
       log('DONE');
       return app.exit(0);

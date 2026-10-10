@@ -59,14 +59,19 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
 }
 
 #island.idle {
-  width: 150px;
+  width: 160px;
   height: 6px;
   border-radius: 0 0 6px 6px;
-  background: #22222e;
+  /* приглушённый акцент + светлый край: видно и на тёмном, и на светлом фоне */
+  background: color-mix(in srgb, var(--accent) 62%, #15151c);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .22);
   cursor: pointer;
 }
 /* без внешнего свечения: оно обрезалось бы краем видимой области */
 body:hover #island.idle { background: var(--accent); height: 8px; }
+/* при запуске полоска дважды мягко вспыхивает, чтобы было видно, где она */
+#island.idle.hello { animation: hello 1.4s ease-in-out 2; }
+@keyframes hello { 50% { background: var(--accent); height: 8px; } }
 
 #island.busy {
   width: 360px;

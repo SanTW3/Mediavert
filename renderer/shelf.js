@@ -282,6 +282,13 @@ $('#clear').onclick = (e) => {
 
 api.listJobs().then((list) => list.forEach(upsert));
 
+// приветственная вспышка полоски при запуске
+setTimeout(() => {
+  if (mode !== 'idle') return;
+  island.classList.add('hello');
+  setTimeout(() => island.classList.remove('hello'), 3000);
+}, 1200);
+
 // акцентный цвет из настроек (челка всегда тёмная)
 api.getSettings().then((s) => Accent.apply(s.accent, { forceDark: true }));
 api.on('settings:changed', (s) => Accent.apply(s.accent, { forceDark: true }));

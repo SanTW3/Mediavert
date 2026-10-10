@@ -186,7 +186,7 @@ function createShelf() {
     show: false,
     webPreferences: { preload: PRELOAD, sandbox: false, backgroundThrottling: false },
   });
-  shelfWin.setAlwaysOnTop(true, 'screen-saver');
+  applyShelfLayer();
   shelfWin.loadFile(path.join(ROOT, 'renderer', 'shelf.html'));
   shelfWin.webContents.on('will-navigate', (e) => e.preventDefault());
   shelfRegion = { ...SHELF_IDLE };
@@ -204,6 +204,25 @@ function createShelf() {
 function destroyShelf() {
   if (shelfWin && !shelfWin.isDestroyed()) shelfWin.destroy();
   shelfWin = null;
+  applyShelfLayer();
+}
+
+// Слой челки: «top» — поверх всех окон, «desktop» — как обычное окно, его закрывают приложения.
+// В режиме «top» раз в пару секунд возвращаем челку наверх: другие окна «поверх всех»
+// (плееры, оверлеи, диспетчер задач) могут её перекрыть.
+let layerTimer = null;
+function applyShelfLayer() {
+  clearInterval(layerTimer);
+  layerTimer = null;
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  if (settings.get().shelfLayer === 'desktop') {
+    shelfWin.setAlwaysOnTop(false);
+  } else {
+    shelfWin.setAlwaysOnTop(true, 'screen-saver');
+    layerTimer = setInterval(() => {
+      if (shelfWin && !shelfWin.isDestroyed() && shelfWin.isVisible()) shelfWin.moveTop();
+    }, 2000);
+  }
 }
 
 // Окно челки всегда одного размера и не двигается: изменение размера прозрачного окна
@@ -381,6 +400,14 @@ function buildTrayMenu() {
       },
       { type: 'separator' },
       { label: '«Челка» сверху экрана', type: 'checkbox', checked: s.shelf, click: (i) => applySettings({ shelf: i.checked }).catch(() => {}) },
+      {
+        label: 'Где показывать челку',
+        enabled: s.shelf,
+        submenu: [
+          { label: 'Поверх всех окон', type: 'radio', checked: s.shelfLayer !== 'desktop', click: () => applySettings({ shelfLayer: 'top' }).catch(() => {}) },
+          { label: 'Только на рабочем столе', type: 'radio', checked: s.shelfLayer === 'desktop', click: () => applySettings({ shelfLayer: 'desktop' }).catch(() => {}) },
+        ],
+      },
       { label: 'Меню Проводника «Конвертировать в…»', type: 'checkbox', checked: s.contextMenu, click: (i) => applySettings({ contextMenu: i.checked }).catch((e) => notify('Mediavert', e.message)) },
       { label: 'Запускать вместе с Windows', type: 'checkbox', checked: s.autostart, click: (i) => applySettings({ autostart: i.checked }).catch(() => {}) },
       { type: 'separator' },
@@ -416,6 +443,7 @@ async function applySettings(patch) {
   }
   if ('accent' in patch && !/^#[0-9a-f]{6}$/i.test(String(patch.accent))) delete patch.accent;
   if ('autoUpdate' in patch) updater.startSchedule(!!patch.autoUpdate);
+  if ('shelfLayer' in patch && !['top', 'desktop'].includes(patch.shelfLayer)) delete patch.shelfLayer;
   if ('theme' in patch) nativeTheme.themeSource = ['light', 'dark'].includes(patch.theme) ? patch.theme : 'system';
   if ('autostart' in patch) {
     const { exe, args } = launchCommand();
@@ -423,6 +451,7 @@ async function applySettings(patch) {
   }
   const s = settings.set(patch);
   if ('shelf' in patch) (s.shelf ? createShelf() : destroyShelf());
+  if ('shelfLayer' in patch) applyShelfLayer();
   buildTrayMenu();
   broadcast('settings:changed', s);
   return s;

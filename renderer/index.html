@@ -217,6 +217,14 @@
       <h3 class="group-title">Интеграция с Windows</h3>
       <div class="rows">
         <label class="row"><span>«Челка» сверху экрана<small>Тащите файл к верхнему краю — появятся форматы</small></span><input type="checkbox" class="switch" data-pref="shelf"></label>
+        <div class="row sub layer-row" id="layerRow">
+          <span>Где показывать<small id="layerHint"></small></span>
+          <div class="segmented small-seg" id="layerSeg">
+            <span class="seg-thumb"></span>
+            <button data-layer="top">Поверх окон</button>
+            <button data-layer="desktop">На рабочем столе</button>
+          </div>
+        </div>
         <label class="row"><span>Меню Проводника<small>Правый клик → «Конвертировать в…». В Windows 11 — в «Показать дополнительные параметры»</small></span><input type="checkbox" class="switch" data-pref="contextMenu"></label>
         <label class="row"><span>Запускать вместе с Windows<small>Тихо стартует в трее</small></span><input type="checkbox" class="switch" data-pref="autostart"></label>
       </div>

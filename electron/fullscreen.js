@@ -18,7 +18,7 @@ function load() {
       MONITORINFO,
       GetForegroundWindow: user32.func('intptr_t __stdcall GetForegroundWindow()'),
       GetWindowRect: user32.func('bool __stdcall GetWindowRect(intptr_t hWnd, _Out_ RECT* lpRect)'),
-      IsZoomed: user32.func('bool __stdcall IsZoomed(intptr_t hWnd)'),
+      GetWindowLongW: user32.func('int32 __stdcall GetWindowLongW(intptr_t hWnd, int index)'),
       IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(intptr_t hWnd)'),
       GetWindowThreadProcessId: user32.func('uint32 __stdcall GetWindowThreadProcessId(intptr_t hWnd, _Out_ uint32* pid)'),
       GetClassNameW: user32.func('int __stdcall GetClassNameW(intptr_t hWnd, _Out_ uint16_t* name, int max)'),
@@ -36,8 +36,11 @@ function load() {
 const MONITOR_DEFAULTTONEAREST = 2;
 // окна рабочего стола и панели задач занимают весь экран, но полноэкранными не считаются
 const SHELL_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
-// QUNS_RUNNING_D3D_FULL_SCREEN (игры в эксклюзивном режиме), QUNS_PRESENTATION_MODE
-const FULLSCREEN_STATES = new Set([3, 4]);
+// QUNS_BUSY (полноэкранное приложение), QUNS_RUNNING_D3D_FULL_SCREEN (игры в эксклюзивном режиме),
+// QUNS_PRESENTATION_MODE
+const FULLSCREEN_STATES = new Set([2, 3, 4]);
+const GWL_STYLE = -16;
+const WS_CAPTION = 0x00c00000;
 
 const handleOf = (win) => {
   const buf = win.getNativeWindowHandle();
@@ -79,8 +82,11 @@ function isFullscreenOn(win) {
     api.GetWindowRect(fg, r);
     const m = theirs.rect;
     const coversMonitor = r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom;
-    // развёрнутое обычное окно (IsZoomed) — не полноэкранный режим, даже если панель задач скрыта
-    return systemSays || (coversMonitor && !api.IsZoomed(fg));
+    // У обычного развёрнутого окна есть заголовок — это не полноэкранный режим, даже если
+    // панель задач скрыта. Признак «развёрнуто» не подходит: многие игры в режиме
+    // «Полный экран» без рамки помечают своё окно как развёрнутое (например, Marathon).
+    const hasCaption = ((api.GetWindowLongW(fg, GWL_STYLE) >>> 0) & WS_CAPTION) === WS_CAPTION;
+    return systemSays || (coversMonitor && !hasCaption);
   } catch {
     return false;
   }

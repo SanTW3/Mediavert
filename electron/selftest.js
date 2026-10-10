@@ -141,7 +141,7 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     await shelf.webContents.executeJavaScript("clearTimeout(finishedTimer); finishedTimer = null; setMode('idle')");
     await wait(600);
     log('before:', await state());
-    for (const mode of ['full', 'max']) {
+    for (const mode of ['full', 'fullmax', 'max']) {
       const form = cp.spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'fsform.ps1'), mode, '6'], { stdio: ['ignore', 'pipe', 'pipe'] });
       form.stdout.on('data', (d) => log(`  [${mode} form] ${String(d).trim()}`));
       await wait(3500);

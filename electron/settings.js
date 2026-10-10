@@ -21,6 +21,7 @@ function defaults() {
     theme: 'system',
     accent: '#6a4dff',
     autoUpdate: true,
+    hideInFullscreen: true, // прятать челку, пока открыто полноэкранное приложение
     shelfLayer: 'top', // top — поверх всех окон, desktop — только на рабочем столе
   };
 }

@@ -18,6 +18,23 @@ let mode = 'idle';
 let dragDepth = 0;
 let finishedTimer = null;
 let shrinkTimer = null;
+let away = false; // открыто полноэкранное приложение — челка спрятана
+
+// пока челка спрятана, её область сжата до точки и не меняется
+function setRegion(rect) {
+  if (!away) api.setShelfRegion(rect);
+}
+
+api.on('shelf:away', (value) => {
+  away = value;
+  document.body.classList.toggle('away', value);
+  if (value) {
+    if (mode === 'drop' || mode === 'activity') setMode(restMode());
+    api.setShelfRegion({ w: 1, h: 1 });
+  } else {
+    api.setShelfRegion(REGION[mode]());
+  }
+});
 const jobs = new Map();
 
 const extOf = (name) => (/\.([^.\\/]+)$/.exec(name || '')?.[1] || '').toLowerCase();
@@ -38,13 +55,13 @@ function setMode(next) {
   const to = REGION[next]();
   const grows = to.w >= from.w && to.h >= from.h;
   if (grows) {
-    api.setShelfRegion(to);
+    setRegion(to);
     requestAnimationFrame(() => (island.className = next));
   } else {
     island.className = `${next} shrinking`;
     shrinkTimer = setTimeout(() => {
       island.classList.remove('shrinking');
-      if (mode === next) api.setShelfRegion(to);
+      if (mode === next) setRegion(to);
     }, SHRINK_MS);
   }
   if (next === 'activity') renderJobs();

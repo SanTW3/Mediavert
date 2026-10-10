@@ -6,6 +6,7 @@ const settings = require('./settings');
 const Jobs = require('./jobs');
 const integration = require('./integration');
 const updater = require('./updater');
+const fullscreen = require('./fullscreen');
 const { extOf } = require('../lib/formats');
 
 const ROOT = path.join(__dirname, '..');
@@ -193,6 +194,7 @@ function createShelf() {
   shelfWin.once('ready-to-show', () => {
     placeShelf();
     shelfWin.showInactive();
+    startFullscreenWatch();
   });
   shelfWin.on('closed', () => {
     shelfWin = null;
@@ -205,6 +207,33 @@ function destroyShelf() {
   if (shelfWin && !shelfWin.isDestroyed()) shelfWin.destroy();
   shelfWin = null;
   applyShelfLayer();
+  startFullscreenWatch();
+}
+
+// Полноэкранные приложения (видео, игры, презентации): челка прячется — гаснет,
+// не ловит мышь и уходит под все окна. Окно при этом не скрывается (hide() ломает клики).
+let shelfAway = false;
+let stopFullscreenWatch = null;
+function startFullscreenWatch() {
+  stopFullscreenWatch?.();
+  stopFullscreenWatch = null;
+  setShelfAway(false);
+  if (!shelfWin || shelfWin.isDestroyed() || !settings.get().hideInFullscreen) return;
+  stopFullscreenWatch = fullscreen.watch(() => shelfWin, setShelfAway);
+}
+function setShelfAway(away) {
+  if (away === shelfAway) return;
+  shelfAway = away;
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  shelfWin.webContents.send('shelf:away', away);
+  if (away) {
+    clearInterval(layerTimer);
+    layerTimer = null;
+    shelfWin.setAlwaysOnTop(false);
+    fullscreen.sendToBottom(shelfWin);
+  } else {
+    applyShelfLayer();
+  }
 }
 
 // Слой челки: «top» — поверх всех окон, «desktop» — как обычное окно, его закрывают приложения.
@@ -215,6 +244,10 @@ function applyShelfLayer() {
   clearInterval(layerTimer);
   layerTimer = null;
   if (!shelfWin || shelfWin.isDestroyed()) return;
+  if (shelfAway) {
+    shelfWin.setAlwaysOnTop(false);
+    return;
+  }
   if (settings.get().shelfLayer === 'desktop') {
     shelfWin.setAlwaysOnTop(false);
   } else {
@@ -452,6 +485,7 @@ async function applySettings(patch) {
   const s = settings.set(patch);
   if ('shelf' in patch) (s.shelf ? createShelf() : destroyShelf());
   if ('shelfLayer' in patch) applyShelfLayer();
+  if ('hideInFullscreen' in patch) startFullscreenWatch();
   buildTrayMenu();
   broadcast('settings:changed', s);
   return s;

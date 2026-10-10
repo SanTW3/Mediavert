@@ -127,6 +127,30 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'prefs-layer.png')].map(String));
     await setLayer('top');
   }
+
+  // полноэкранные чужие окна: челка прячется и возвращается
+  async function fullscreenTest(main, shelf) {
+    const cp = require('child_process');
+    const hit = () => {
+      const b = shelf.getBounds();
+      return cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'hit.ps1'), String(b.x + Math.round(b.width / 2)), '3'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).stdout.trim();
+    };
+    const state = async () => `away=${await shelf.webContents.executeJavaScript("document.body.classList.contains('away')")} | onTop=${shelf.isAlwaysOnTop()} | ${hit()}`;
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    main.hide();
+    await shelf.webContents.executeJavaScript("clearTimeout(finishedTimer); finishedTimer = null; setMode('idle')");
+    await wait(600);
+    log('before:', await state());
+    for (const mode of ['full', 'max']) {
+      const form = cp.spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'fsform.ps1'), mode, '6'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      form.stdout.on('data', (d) => log(`  [${mode} form] ${String(d).trim()}`));
+      await wait(3500);
+      log(`${mode} window open:`, await state());
+      await new Promise((r) => form.on('exit', r));
+      await wait(1800);
+      log(`${mode} window closed:`, await state());
+    }
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -197,7 +221,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_LAYER) await layerTest(main, shelf2);
+      if (process.env.MEDIAVERT_FS) await fullscreenTest(main, shelf2);
+      else if (process.env.MEDIAVERT_LAYER) await layerTest(main, shelf2);
       else if (process.env.MEDIAVERT_REALCLICK) await realClickTest(main, shelf2);
       else await morphTest(main, shelf2);
       log('DONE');

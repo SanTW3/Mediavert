@@ -182,6 +182,7 @@ const LAYER_HINT = {
 function syncLayer(s) {
   const layer = s.shelfLayer === 'desktop' ? 'desktop' : 'top';
   $('#layerRow').hidden = !s.shelf;
+  $('#fsRow').hidden = !s.shelf;
   $('#layerHint').textContent = LAYER_HINT[layer];
   $$('#layerSeg button').forEach((b) => b.classList.toggle('active', b.dataset.layer === layer));
   moveThumb($('#layerSeg'));

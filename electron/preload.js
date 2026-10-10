@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { FORMAT_LIST, EXT, TARGETS, KIND_LABEL } = require('../lib/formats');
 
-const EVENTS = ['job:update', 'files:add', 'shelf:pointer-left', 'settings:changed', 'guide:open', 'update:status', 'morph:play', 'morph:fade', 'window:enter', 'window:prepare', 'shelf:morph-started'];
+const EVENTS = ['job:update', 'files:add', 'shelf:pointer-left', 'settings:changed', 'guide:open', 'update:status', 'morph:play', 'morph:fade', 'window:enter', 'window:prepare', 'shelf:morph-started', 'shelf:away'];
 
 contextBridge.exposeInMainWorld('api', {
   formats: { FORMAT_LIST, EXT, TARGETS, KIND_LABEL },

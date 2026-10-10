@@ -1,7 +1,7 @@
 {
   "name": "mediavert",
   "productName": "Mediavert",
-  "version": "2.5.3",
+  "version": "2.5.4",
   "description": "Конвертер аудио, видео и изображений для музыкантов и всех остальных",
   "author": "Mediavert",
   "main": "electron/main.js",
@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
-    "ffmpeg-static": "^5.2.0"
+    "ffmpeg-static": "^5.2.0",
+    "koffi": "^3.3.2"
   },
   "devDependencies": {
     "electron": "^44.7.0",
@@ -36,7 +37,8 @@
       "package.json"
     ],
     "asarUnpack": [
-      "node_modules/ffmpeg-static/**/*"
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/@koromix/**/*"
     ],
     "win": {
       "target": [

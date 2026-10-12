@@ -27,6 +27,22 @@ html, body {
 }
 
 body { display: flex; justify-content: center; align-items: flex-start; transition: opacity .25s ease; }
+/* «стекло»: островок полупрозрачный, под ним системное размытие (окно-подложка).
+   Углы 9 px — как у подложки (Windows скругляет окна на 8 px), тени нет: её не размоешь */
+body.glass #island.busy,
+body.glass #island.drop,
+body.glass #island.activity {
+  background: rgba(12, 12, 17, var(--island-a, .6));
+  border-radius: 0 0 9px 9px;
+  border-color: rgba(255, 255, 255, .07);
+  box-shadow: none;
+}
+body.glass .tile { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .08); }
+body.glass .tile.hot { background: var(--accent); }
+body.glass .job { background: rgba(255, 255, 255, .045); }
+body.glass .job-icon,
+body.glass .head-actions button { background: rgba(255, 255, 255, .07); }
+
 /* открыто полноэкранное приложение */
 body.away { opacity: 0; pointer-events: none; }
 

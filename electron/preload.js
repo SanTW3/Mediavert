@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { FORMAT_LIST, EXT, TARGETS, KIND_LABEL } = require('../lib/formats');
 
-const EVENTS = ['job:update', 'files:add', 'shelf:pointer-left', 'settings:changed', 'guide:open', 'update:status', 'morph:play', 'morph:fade', 'window:enter', 'window:prepare', 'shelf:morph-started', 'shelf:away'];
+const EVENTS = ['job:update', 'files:add', 'shelf:pointer-left', 'settings:changed', 'guide:open', 'update:status', 'morph:play', 'morph:fade', 'window:enter', 'window:prepare', 'shelf:morph-started', 'shelf:away', 'shelf:glass'];
 
 contextBridge.exposeInMainWorld('api', {
   formats: { FORMAT_LIST, EXT, TARGETS, KIND_LABEL },
@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
   morphLanded: () => ipcRenderer.send('morph:landed'),
   morphAlmost: () => ipcRenderer.send('morph:almost'),
   setShelfRegion: (rect) => ipcRenderer.send('shelf:region', rect),
+  setGlassRect: (rect) => ipcRenderer.send('shelf:glass-rect', rect),
 
   getVersion: () => ipcRenderer.invoke('app:version'),
   updateStatus: () => ipcRenderer.invoke('update:status'),

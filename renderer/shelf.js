@@ -25,6 +25,31 @@ function setRegion(rect) {
   if (!away) api.setShelfRegion(rect);
 }
 
+// «Стекло»: под островком лежит окно-подложка с системным размытием. Каждый кадр сообщаем
+// размер островка, чтобы подложка повторяла его и во время анимаций.
+let glass = false;
+let glassSent = '';
+api.on('shelf:glass', ({ on, alpha }) => {
+  glass = on;
+  glassSent = '';
+  document.body.classList.toggle('glass', on);
+  document.documentElement.style.setProperty('--island-a', alpha);
+  if (!on) api.setGlassRect(null);
+});
+(function glassLoop() {
+  requestAnimationFrame(glassLoop);
+  if (!glass) return;
+  let rect = null;
+  const r = island.getBoundingClientRect();
+  // Windows не даёт окну быть ниже ~40 px — тонкую полоску и спрятанную челку не размываем
+  if (!away && r.height >= 40) rect = { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+  const key = rect ? `${rect.x},${rect.y},${rect.w},${rect.h}` : 'none';
+  if (key !== glassSent) {
+    glassSent = key;
+    api.setGlassRect(rect);
+  }
+})();
+
 api.on('shelf:away', (value) => {
   away = value;
   document.body.classList.toggle('away', value);

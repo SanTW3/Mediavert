@@ -175,6 +175,37 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'glass-prefs.png')].map(String), { stdio: 'ignore' });
     log('saved', JSON.stringify({ material: settings.get().material, glass: settings.get().glass }));
   }
+
+  // «стекло» челки: снимки островка над рабочим столом и положение подложки
+  async function shelfGlassTest(main, shelf) {
+    const cp = require('child_process');
+    const grabTop = (name, h = 360) => {
+      const b = shelf.getBounds();
+      cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x - 20, b.y, b.width + 40, h, path.join(out, name + '.png')].map(String), { stdio: 'ignore' });
+    };
+    const under = () => BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Mediavert Glass');
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    main.hide();
+    await shelf.webContents.executeJavaScript("clearTimeout(finishedTimer); finishedTimer = null; setMode('idle')");
+    for (const [material, glass] of [['acrylic', 55], ['mica', 30]]) {
+      await main.webContents.executeJavaScript(`setPref({ material: '${material}', glass: ${glass} })`);
+      await wait(900);
+      await shelf.webContents.executeJavaScript("setMode('activity')");
+      await wait(500); // меньше, чем челка ждёт ухода курсора
+      const u = under();
+      log(`${material} ${glass}: shelf glass class`, await shelf.webContents.executeJavaScript("document.body.classList.contains('glass')"), '| underlay', u ? JSON.stringify(u.getBounds()) : 'none');
+      grabTop(`shelf-glass-${material}`);
+      await shelf.webContents.executeJavaScript("buildTiles(new Set(['audio']), 1); setMode('drop')");
+      await wait(500);
+      grabTop(`shelf-glass-${material}-drop`, 200);
+      await shelf.webContents.executeJavaScript("setMode('idle')");
+      await wait(900);
+      log('  idle → underlay', under() ? JSON.stringify(under().getBounds()) : 'none');
+    }
+    await main.webContents.executeJavaScript(`setPref({ material: 'none' })`);
+    await wait(700);
+    log('material none → underlay', under() ? 'still exists' : 'removed', '| glass class', await shelf.webContents.executeJavaScript("document.body.classList.contains('glass')"));
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -245,7 +276,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_GLASS) await glassTest(main);
+      if (process.env.MEDIAVERT_SHELFGLASS) await shelfGlassTest(main, shelf2);
+      else if (process.env.MEDIAVERT_GLASS) await glassTest(main);
       else if (process.env.MEDIAVERT_FS) await fullscreenTest(main, shelf2);
       else if (process.env.MEDIAVERT_LAYER) await layerTest(main, shelf2);
       else if (process.env.MEDIAVERT_REALCLICK) await realClickTest(main, shelf2);

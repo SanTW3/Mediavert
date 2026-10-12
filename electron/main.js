@@ -7,6 +7,7 @@ const Jobs = require('./jobs');
 const integration = require('./integration');
 const updater = require('./updater');
 const fullscreen = require('./fullscreen');
+const blur = require('./blur');
 const { extOf } = require('../lib/formats');
 
 const ROOT = path.join(__dirname, '..');
@@ -208,8 +209,10 @@ function createShelf() {
     placeShelf();
     shelfWin.showInactive();
     startFullscreenWatch();
+    syncShelfGlass();
   });
   shelfWin.on('closed', () => {
+    destroyUnderlay();
     shelfWin = null;
     clearInterval(pointerTimer);
     pointerTimer = null;
@@ -240,6 +243,7 @@ function setShelfAway(away) {
   if (!shelfWin || shelfWin.isDestroyed()) return;
   shelfWin.webContents.send('shelf:away', away);
   if (away) {
+    parkUnderlay();
     clearInterval(layerTimer);
     layerTimer = null;
     shelfWin.setAlwaysOnTop(false);
@@ -274,6 +278,74 @@ function applyShelfLayer() {
 // Окно челки всегда одного размера и не двигается: изменение размера прозрачного окна
 // на Windows даёт кадры со сдвинутым старым содержимым. Вместо этого меняем видимую
 // и кликабельную область (setShape) — всё снаружи неё прозрачно для мыши и drop.
+/* ---------- «стекло» челки ----------
+   Под прозрачным окном челки нельзя включить системное размытие только по форме островка:
+   Windows размывает весь прямоугольник окна. Поэтому размытие рисует отдельное пустое окно-
+   подложка ровно под островком; челка присылает размер островка каждый кадр анимации. */
+
+let underlay = null;
+let underlayReady = null;
+const UNDERLAY_TOP = 12; // верхние скругления подложки прячем за край экрана
+
+function shelfGlassOn() {
+  return !!(MICA && shelfWin && !shelfWin.isDestroyed() && settings.get().material !== 'none' && blur.available());
+}
+
+function ensureUnderlay() {
+  if (underlay && !underlay.isDestroyed()) return underlayReady;
+  underlay = new BrowserWindow({
+    title: 'Mediavert Glass', width: 200, height: 100, frame: false, transparent: true, backgroundColor: '#00000000',
+    // resizable: при false Windows не даёт менять размер даже программно; мышью подложку не зацепить — она пропускает клики
+    resizable: true, movable: false, focusable: false, skipTaskbar: true, hasShadow: false, thickFrame: false, show: false,
+    minWidth: 1, minHeight: 1,
+    webPreferences: { sandbox: true },
+  });
+  underlay.setIgnoreMouseEvents(true);
+  underlay.on('closed', () => (underlay = null));
+  underlayReady = underlay.loadURL('data:text/html,<title>Mediavert Glass</title><body style="margin:0;background:transparent"></body>').then(() => {
+    if (!underlay || underlay.isDestroyed()) return;
+    parkUnderlay();
+    underlay.showInactive(); // показываем один раз за краем экрана — дальше только переносим
+    blur.styleUnderlay(underlay);
+    applyUnderlayMaterial();
+  });
+  return underlayReady;
+}
+
+function applyUnderlayMaterial() {
+  if (!underlay || underlay.isDestroyed()) return;
+  blur.setBlur(underlay, settings.get().material === 'acrylic' ? 'acrylic' : 'blur');
+}
+
+function parkUnderlay() {
+  if (!underlay || underlay.isDestroyed()) return;
+  underlay.setBounds({ x: -20000, y: -20000, width: 200, height: 100 });
+}
+
+function destroyUnderlay() {
+  if (underlay && !underlay.isDestroyed()) underlay.destroy();
+  underlay = null;
+}
+
+// rect — островок в координатах окна челки (DIP) или null, если размытие не нужно
+function updateUnderlay(rect) {
+  if (!underlay || underlay.isDestroyed() || !shelfWin || shelfWin.isDestroyed()) return;
+  if (!rect || shelfAway) return parkUnderlay();
+  const sb = shelfWin.getBounds();
+  const p = screen.dipToScreenRect(shelfWin, { x: sb.x + rect.x, y: sb.y + rect.y - UNDERLAY_TOP, width: rect.w, height: rect.h + UNDERLAY_TOP });
+  blur.placeBelow(underlay, shelfWin, p.x, p.y, p.width, p.height); // ровно под челкой — и в режиме «на рабочем столе»
+}
+
+// Включить/выключить «стекло» челки по настройкам и сообщить её странице плотность островка
+function syncShelfGlass() {
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  const on = shelfGlassOn();
+  const t = Math.min(Math.max(Number(settings.get().glass) || 0, 0), 90);
+  if (on) ensureUnderlay().then(applyUnderlayMaterial);
+  else destroyUnderlay();
+  sendWhenReady(shelfWin, 'shelf:glass', { on, alpha: Math.max(0.28, 1 - (t / 100) * 0.8) });
+}
+
 function placeShelf() {
   if (!shelfWin || shelfWin.isDestroyed()) return;
   const d = screen.getPrimaryDisplay().bounds;
@@ -502,6 +574,7 @@ async function applySettings(patch) {
   if ('shelfLayer' in patch) applyShelfLayer();
   if ('hideInFullscreen' in patch) startFullscreenWatch();
   if ('material' in patch) applyMaterial();
+  if ('material' in patch || 'glass' in patch) syncShelfGlass();
   buildTrayMenu();
   broadcast('settings:changed', s);
   return s;
@@ -541,6 +614,7 @@ ipcMain.on('main:open', (_e, paths, rect) => {
 });
 ipcMain.on('morph:landed', () => morphLanded?.());
 ipcMain.on('morph:almost', () => morphAlmost?.());
+ipcMain.on('shelf:glass-rect', (_e, rect) => updateUnderlay(rect));
 ipcMain.on('shelf:region', (_e, r) => {
   if (!r || !Number.isFinite(r.w) || !Number.isFinite(r.h)) return;
   shelfRegion = { w: r.w, h: r.h };

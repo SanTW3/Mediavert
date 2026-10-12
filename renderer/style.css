@@ -80,8 +80,19 @@ body {
   display: flex;
   flex-direction: column;
 }
-/* Windows 11: полупрозрачный фон поверх системного материала Mica */
-html.mica body { background: var(--bg-glass); }
+/* «Стекло» (Windows 11): фон окна и панели полупрозрачные, сквозь них виден системный
+   материал — Mica (обои) или акрил (размытые окна позади). Доли непрозрачности
+   --glass-bg / --glass-panel / --glass-card задаются ползунком в настройках. */
+html.glass body { background: color-mix(in srgb, var(--bg) var(--glass-bg, 70%), transparent); }
+html.glass .inspector { background: color-mix(in srgb, var(--surface-2) var(--glass-panel, 76%), transparent); }
+html.glass .drop,
+html.glass .files,
+html.glass .rows { background: color-mix(in srgb, var(--surface) var(--glass-card, 85%), transparent); }
+html.glass .drop.over { background: var(--accent-soft); }
+html.glass .modal {
+  background: color-mix(in srgb, var(--bg) var(--glass-card, 85%), transparent);
+  backdrop-filter: blur(28px) saturate(1.3);
+}
 
 button, select, input { font: inherit; color: inherit; }
 input, select { user-select: auto; }
@@ -284,7 +295,7 @@ body:not(.has-files) .actionbar { display: none; }
   padding: 18px 0 22px;
   background: linear-gradient(to bottom, transparent, var(--bg) 40%);
 }
-html.mica .actionbar { background: none; }
+html.glass .actionbar { background: none; }
 
 /* ---------- кнопки ---------- */
 
@@ -517,6 +528,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 8px 0 2p
 .pv-chip { background: var(--accent-soft); color: var(--accent-text); border-radius: 14px; padding: 4px 10px; font-size: 12px; font-weight: 500; }
 .pv-link { color: var(--accent-text); font-weight: 500; font-size: 12px; }
 .foot-right { display: flex; gap: 8px; }
+
+/* прозрачность окна */
+.glass-rows { margin-top: 10px; }
+.glass-rows input[type="range"]:disabled { opacity: .35; }
+#glassVal { color: var(--accent-text); }
 
 /* выбор слоя челки */
 .layer-row { flex-wrap: wrap; }

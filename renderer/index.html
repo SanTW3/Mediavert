@@ -247,6 +247,20 @@
         <button data-theme="dark">Тёмное</button>
       </div>
 
+      <div id="glassSection" hidden>
+        <h3 class="group-title">Прозрачность окна</h3>
+        <div class="segmented" id="materialSeg">
+          <span class="seg-thumb"></span>
+          <button data-material="mica">Mica</button>
+          <button data-material="acrylic">Акрил</button>
+          <button data-material="none">Без эффекта</button>
+        </div>
+        <div class="rows glass-rows">
+          <label class="row column"><span>Прозрачность <b id="glassVal">30%</b></span><input type="range" id="glassRange" min="0" max="90" step="1"></label>
+        </div>
+        <p class="footnote" id="materialHint"></p>
+      </div>
+
       <h3 class="group-title">Обновления</h3>
       <div class="rows">
         <div class="row">

@@ -143,7 +143,47 @@ function syncDepends() {
 }
 $$('.settings .switch').forEach((s) => s.addEventListener('change', syncDepends));
 
-if (api.platform?.mica) document.documentElement.classList.add('mica');
+/* ---------- прозрачность окна («стекло») ---------- */
+
+const MATERIAL_HINT = {
+  mica: 'Сквозь окно мягко просвечивают обои рабочего стола',
+  acrylic: 'Сквозь окно видны размытые окна позади — как в браузере Zen',
+  none: 'Сплошной фон без прозрачности',
+};
+
+function applyGlass(s) {
+  const supported = !!api.platform?.mica;
+  const material = ['mica', 'acrylic', 'none'].includes(s.material) ? s.material : 'mica';
+  const t = Math.min(Math.max(Number(s.glass) || 0, 0), 90);
+  const root = document.documentElement;
+  root.classList.toggle('glass', supported && material !== 'none');
+  // панели и карточки чуть плотнее фона, чтобы текст оставался читаемым
+  root.style.setProperty('--glass-bg', `${100 - t}%`);
+  root.style.setProperty('--glass-panel', `${100 - t * 0.8}%`);
+  root.style.setProperty('--glass-card', `${100 - t * 0.5}%`);
+
+  $('#glassSection').hidden = !supported;
+  $$('#materialSeg button').forEach((b) => b.classList.toggle('active', b.dataset.material === material));
+  moveThumb($('#materialSeg'));
+  const range = $('#glassRange');
+  if (document.activeElement !== range) range.value = t;
+  range.disabled = material === 'none';
+  $('#glassVal').textContent = material === 'none' ? '—' : `${t}%`;
+  $('#materialHint').textContent = MATERIAL_HINT[material];
+  try { localStorage.setItem('glass', JSON.stringify({ material, glass: t })); } catch {}
+}
+
+$$('#materialSeg button').forEach((b) =>
+  b.addEventListener('click', () => {
+    applyGlass({ ...state.settings, material: b.dataset.material });
+    setPref({ material: b.dataset.material });
+  }),
+);
+$('#glassRange').addEventListener('input', (e) => applyGlass({ ...state.settings, glass: e.target.value }));
+$('#glassRange').addEventListener('change', (e) => setPref({ glass: Number(e.target.value) }));
+
+// значения из прошлого запуска — сразу, чтобы окно не мигало при загрузке
+try { applyGlass(JSON.parse(localStorage.getItem('glass')) || { material: 'mica', glass: 30 }); } catch { applyGlass({ material: 'mica', glass: 30 }); }
 
 const q = field('imageQuality');
 q.addEventListener('input', () => ($('#qVal').textContent = q.value));
@@ -165,6 +205,7 @@ function applySettingsToUI(s) {
   $('#outDir').title = s.outputDir;
   syncDepends();
   syncTheme(s.theme);
+  applyGlass(s);
   applyAccentSetting(s.accent);
 }
 
@@ -228,6 +269,7 @@ function applyPrefsOnly(s) {
   $('#outDir').textContent = s.outputDir;
   syncTheme(s.theme);
   syncLayer(s);
+  applyGlass(s);
   applyAccentSetting(s.accent);
 }
 
@@ -285,6 +327,7 @@ $('#openPrefs').onclick = () => {
   prefsDialog.showModal();
   moveThumb($('#themeSeg'));
   moveThumb($('#layerSeg'));
+  moveThumb($('#materialSeg'));
 };
 
 function showSlide(i) {

@@ -30,11 +30,24 @@ const dragIcons = new Map();
 
 // Материал Mica есть в Windows 11 22H2 (сборка 22621) и новее
 const MICA = process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621;
+const MATERIALS = ['mica', 'acrylic', 'none'];
+// «стекло» включено: система поддерживает и пользователь не выбрал «без эффекта»
+const glassOn = () => MICA && settings.get().material !== 'none';
+const solidBg = () => (nativeTheme.shouldUseDarkColors ? '#17171b' : '#f2f2f5');
+
+// Смена эффекта на лету: Mica (обои), акрил (размытые окна позади) или сплошной фон
+function applyMaterial() {
+  if (!mainWin || mainWin.isDestroyed() || !MICA) return;
+  const m = settings.get().material;
+  mainWin.setBackgroundMaterial(glassOn() ? m : 'none');
+  mainWin.setBackgroundColor(glassOn() ? '#00000000' : solidBg());
+  mainWin.setTitleBarOverlay(titleBarColors());
+}
 
 function titleBarColors() {
   const dark = nativeTheme.shouldUseDarkColors;
   return {
-    color: MICA ? '#00000000' : dark ? '#17171b' : '#f2f2f5',
+    color: glassOn() ? '#00000000' : dark ? '#17171b' : '#f2f2f5',
     symbolColor: dark ? '#e8e8ee' : '#2a2a33',
     height: 48,
   };
@@ -133,8 +146,8 @@ function createMain({ autoShow = true } = {}) {
     minHeight: 560,
     title: 'Mediavert',
     icon: ICON,
-    backgroundColor: MICA ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#17171b' : '#f2f2f5',
-    backgroundMaterial: MICA ? 'mica' : undefined,
+    backgroundColor: glassOn() ? '#00000000' : solidBg(),
+    backgroundMaterial: MICA ? (glassOn() ? settings.get().material : 'none') : undefined,
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarColors(),
     show: false,
@@ -477,6 +490,8 @@ async function applySettings(patch) {
   if ('accent' in patch && !/^#[0-9a-f]{6}$/i.test(String(patch.accent))) delete patch.accent;
   if ('autoUpdate' in patch) updater.startSchedule(!!patch.autoUpdate);
   if ('shelfLayer' in patch && !['top', 'desktop'].includes(patch.shelfLayer)) delete patch.shelfLayer;
+  if ('material' in patch && !MATERIALS.includes(patch.material)) delete patch.material;
+  if ('glass' in patch) patch.glass = Math.min(Math.max(Math.round(Number(patch.glass) || 0), 0), 90);
   if ('theme' in patch) nativeTheme.themeSource = ['light', 'dark'].includes(patch.theme) ? patch.theme : 'system';
   if ('autostart' in patch) {
     const { exe, args } = launchCommand();
@@ -486,6 +501,7 @@ async function applySettings(patch) {
   if ('shelf' in patch) (s.shelf ? createShelf() : destroyShelf());
   if ('shelfLayer' in patch) applyShelfLayer();
   if ('hideInFullscreen' in patch) startFullscreenWatch();
+  if ('material' in patch) applyMaterial();
   buildTrayMenu();
   broadcast('settings:changed', s);
   return s;
@@ -589,7 +605,7 @@ if (!app.requestSingleInstanceLock({ argv: process.argv })) {
     nativeTheme.on('updated', () => {
       if (mainWin && !mainWin.isDestroyed()) {
         mainWin.setTitleBarOverlay(titleBarColors());
-        if (!MICA) mainWin.setBackgroundColor(titleBarColors().color);
+        if (!glassOn()) mainWin.setBackgroundColor(solidBg());
       }
     });
     createTray();

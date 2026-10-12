@@ -151,6 +151,30 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
       log(`${mode} window closed:`, await state());
     }
   }
+
+  // прозрачность окна: снимки в разных режимах
+  async function glassTest(main) {
+    const cp = require('child_process');
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    await wait(600); // после гайда само открывается окно выбора цвета — закрываем и его
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    main.webContents.send('files:add', [path.join(samples, 'beat тест.wav'), path.join(samples, 'clip.mp4'), path.join(samples, 'cover.png')]);
+    main.show(); main.focus();
+    await main.webContents.executeJavaScript(`setPref({ theme: 'dark' })`);
+    for (const [material, glass] of [['mica', 30], ['mica', 75], ['acrylic', 55], ['none', 30]]) {
+      await main.webContents.executeJavaScript(`setPref({ material: '${material}', glass: ${glass} })`);
+      await wait(900);
+      main.moveTop(); main.focus(); await wait(400);
+      const b = main.getBounds();
+      cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, `glass-${material}-${glass}.png`)].map(String), { stdio: 'ignore' });
+      log('glass', material, glass, '| html.glass =', await main.webContents.executeJavaScript("document.documentElement.classList.contains('glass')"));
+    }
+    await main.webContents.executeJavaScript(`setPref({ material: 'acrylic', glass: 55 }); document.querySelector('#openPrefs').click(); document.querySelector('#glassSection').scrollIntoView()`);
+    await wait(800);
+    const b = main.getBounds();
+    cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'glass-prefs.png')].map(String), { stdio: 'ignore' });
+    log('saved', JSON.stringify({ material: settings.get().material, glass: settings.get().glass }));
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -221,7 +245,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_FS) await fullscreenTest(main, shelf2);
+      if (process.env.MEDIAVERT_GLASS) await glassTest(main);
+      else if (process.env.MEDIAVERT_FS) await fullscreenTest(main, shelf2);
       else if (process.env.MEDIAVERT_LAYER) await layerTest(main, shelf2);
       else if (process.env.MEDIAVERT_REALCLICK) await realClickTest(main, shelf2);
       else await morphTest(main, shelf2);

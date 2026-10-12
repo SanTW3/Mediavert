@@ -159,9 +159,15 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     await wait(600); // после гайда само открывается окно выбора цвета — закрываем и его
     await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
     main.webContents.send('files:add', [path.join(samples, 'beat тест.wav'), path.join(samples, 'clip.mp4'), path.join(samples, 'cover.png')]);
-    main.show(); main.focus();
+    // яркий фон позади окна, чтобы было видно, сколько просвечивает
+    const mb = main.getBounds();
+    const backdrop = new BrowserWindow({ x: mb.x - 60, y: mb.y - 40, width: mb.width + 120, height: mb.height + 80, frame: false, show: false, focusable: false, title: 'Backdrop' });
+    await backdrop.loadURL('data:text/html,' + encodeURIComponent('<body style="margin:0;height:100vh;background:repeating-linear-gradient(90deg,#e63946 0 120px,#f1c40f 120px 240px,#2ecc71 240px 360px,#3498db 360px 480px);font:900 120px Segoe UI;color:#fff;display:grid;place-items:center">BACKDROP</body>'));
+    backdrop.showInactive();
+    await wait(300);
+    main.show(); main.focus(); main.moveTop();
     await main.webContents.executeJavaScript(`setPref({ theme: 'dark' })`);
-    for (const [material, glass] of [['mica', 30], ['mica', 75], ['acrylic', 55], ['none', 30]]) {
+    for (const [material, glass] of [['mica', 0], ['mica', 50], ['mica', 90], ['acrylic', 50]]) {
       await main.webContents.executeJavaScript(`setPref({ material: '${material}', glass: ${glass} })`);
       await wait(900);
       main.moveTop(); main.focus(); await wait(400);
@@ -169,6 +175,7 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
       cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, `glass-${material}-${glass}.png`)].map(String), { stdio: 'ignore' });
       log('glass', material, glass, '| html.glass =', await main.webContents.executeJavaScript("document.documentElement.classList.contains('glass')"));
     }
+    backdrop.destroy();
     await main.webContents.executeJavaScript(`setPref({ material: 'acrylic', glass: 55 }); document.querySelector('#openPrefs').click(); document.querySelector('#glassSection').scrollIntoView()`);
     await wait(800);
     const b = main.getBounds();

@@ -21,7 +21,7 @@ function defaults() {
     theme: 'system',
     accent: '#6a4dff',
     autoUpdate: true,
-    material: 'mica', // mica — обои, acrylic — размытые окна позади, none — сплошной фон
+    material: 'mica', // mica — «Размытие» (простое размытие того, что позади), acrylic — акрил, none — сплошной фон
     glass: 30, // прозрачность фона окна, %
     hideInFullscreen: true, // прятать челку, пока открыто полноэкранное приложение
     shelfLayer: 'top', // top — поверх всех окон, desktop — только на рабочем столе

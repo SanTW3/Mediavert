@@ -37,11 +37,21 @@ const glassOn = () => MICA && settings.get().material !== 'none';
 const solidBg = () => (nativeTheme.shouldUseDarkColors ? '#17171b' : '#f2f2f5');
 
 // Смена эффекта на лету: Mica (обои), акрил (размытые окна позади) или сплошной фон
+// Режим «Размытие» хранится под ключом mica (так он назывался раньше). Системный Mica
+// почти непрозрачен — ползунок прозрачности на нём почти не виден, поэтому вместо него
+// включаем простое размытие того, что позади окна, как у челки.
 function applyMaterial() {
   if (!mainWin || mainWin.isDestroyed() || !MICA) return;
   const m = settings.get().material;
-  mainWin.setBackgroundMaterial(glassOn() ? m : 'none');
-  mainWin.setBackgroundColor(glassOn() ? '#00000000' : solidBg());
+  const on = glassOn();
+  if (on && m === 'mica') {
+    mainWin.setBackgroundMaterial('none');
+    blur.setBlur(mainWin, 'blur');
+  } else {
+    blur.setBlur(mainWin, 'none');
+    mainWin.setBackgroundMaterial(on ? m : 'none');
+  }
+  mainWin.setBackgroundColor(on ? '#00000000' : solidBg());
   mainWin.setTitleBarOverlay(titleBarColors());
 }
 
@@ -148,7 +158,7 @@ function createMain({ autoShow = true } = {}) {
     title: 'Mediavert',
     icon: ICON,
     backgroundColor: glassOn() ? '#00000000' : solidBg(),
-    backgroundMaterial: MICA ? (glassOn() ? settings.get().material : 'none') : undefined,
+    backgroundMaterial: MICA ? (glassOn() && settings.get().material === 'acrylic' ? 'acrylic' : 'none') : undefined,
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarColors(),
     show: false,
@@ -157,6 +167,7 @@ function createMain({ autoShow = true } = {}) {
   });
   mainWin.removeMenu();
   mainWin.loadFile(path.join(ROOT, 'renderer', 'index.html'));
+  applyMaterial();
   if (autoShow) mainWin.once('ready-to-show', () => mainWin.show());
   mainWin.webContents.on('will-navigate', (e) => e.preventDefault());
   mainWin.on('close', (e) => {

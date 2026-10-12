@@ -26,39 +26,3 @@
 
 Установленный Mediavert сам проверяет GitHub Releases: при запуске и раз в 4 часа. Новую версию он скачивает в фоне,
 показывает кнопку «Обновить до …» в шапке и уведомление, а если её не нажать — ставит обновление при следующем выходе из программы.
-
-Один раз:
-
-1. Создайте **публичный** репозиторий на GitHub (например, `mediavert`).
-2. В `package.json` → `build.publish` впишите свой логин в `owner` и имя репозитория в `repo`.
-3. Создайте токен: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained,
-   доступ только к этому репозиторию, право **Contents: Read and write**.
-
-Каждый выпуск:
-
-1. Увеличьте `version` в `package.json` (например, 2.5.0 → 2.5.1).
-2. В PowerShell:
-   ```
-   $env:GH_TOKEN = "ваш_токен"
-   npm.cmd run release
-   ```
-   Сборщик создаст релиз `v2.5.1` и загрузит туда установщик и `latest.yml` — у всех пользователей обновление
-   появится само. Токен никому не передавайте и не сохраняйте в файлах проекта.
-
-## Разработка
-
-```
-npm install
-node node_modules/electron/install.js   # если npm не запустил install-скрипт Electron
-npm start                                # запуск из исходников
-npm run dist                             # сборка установщика в dist/
-```
-
-Структура:
-
-- `electron/main.js`: окна, трей, челка, IPC
-- `electron/jobs.js`: очередь конвертаций
-- `lib/convert.js`: параметры ffmpeg
-- `renderer/`: интерфейс главного окна (`index.html`) и челки (`shelf.html`)
-- `scripts/make-assets.js`: иконка и скрипт очистки реестра для деинсталлятора
-- `electron/selftest.js`: автопроверка (`MEDIAVERT_SELFTEST=<папка>`), в сборку не входит

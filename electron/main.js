@@ -632,7 +632,7 @@ ipcMain.on('shelf:region', (_e, r) => {
   applyShelfRegion();
 });
 
-// Перетаскивание готового файла из приложения в DAW / Проводник
+// Перетаскивание готового файла из приложения в другие программы / Проводник
 ipcMain.on('file:drag-out', (e, file) => {
   if (!file || !fs.existsSync(file)) return;
   const icon = dragIcons.get(extOf(file)) || nativeImage.createFromPath(ICON).resize({ width: 48, height: 48 });

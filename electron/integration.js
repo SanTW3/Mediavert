@@ -6,8 +6,8 @@ const path = require('path');
 const { EXT } = require('../lib/formats');
 
 const MENU = {
-  audio: [['wav', 'WAV'], ['mp3', 'MP3'], ['flac', 'FLAC'], ['aiff', 'AIFF'], ['aac', 'AAC (.m4a)']],
-  video: [['mp4', 'MP4'], ['gif', 'GIF'], ['webm', 'WebM'], ['wav', 'WAV (только звук)'], ['mp3', 'MP3 (только звук)']],
+  audio: [['mp3', 'MP3'], ['wav', 'WAV'], ['aac', 'AAC (.m4a)'], ['flac', 'FLAC'], ['aiff', 'AIFF']],
+  video: [['mp4', 'MP4'], ['gif', 'GIF'], ['webm', 'WebM'], ['mp3', 'MP3 (только звук)'], ['wav', 'WAV (только звук)']],
   image: [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP'], ['ico', 'ICO (иконка)']],
 };
 

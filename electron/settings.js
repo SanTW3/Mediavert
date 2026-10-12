@@ -10,7 +10,7 @@ function defaults() {
       height: '', fps: '', quality: 'medium', mute: false,
       width: '', imageQuality: '90',
     },
-    defaults: { audio: 'wav', video: 'mp4', image: 'png' },
+    defaults: { audio: 'mp3', video: 'mp4', image: 'png' },
     outputMode: 'beside', // beside — рядом с исходником, folder — в outputDir
     outputDir: path.join(app.getPath('documents'), 'Mediavert'),
     shelf: true,

@@ -254,7 +254,7 @@ function renderJobs() {
       <div class="job-actions"></div>`;
     if (done) {
       li.draggable = true;
-      li.title = 'Перетащите файл в DAW, мессенджер или папку';
+      li.title = 'Перетащите файл в любую программу, мессенджер или папку';
       li.addEventListener('dragstart', (e) => {
         e.preventDefault();
         api.startDrag(j.output);

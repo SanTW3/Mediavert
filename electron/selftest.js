@@ -213,6 +213,24 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     await wait(700);
     log('material none → underlay', under() ? 'still exists' : 'removed', '| glass class', await shelf.webContents.executeJavaScript("document.body.classList.contains('glass')"));
   }
+
+  // снимок вкладки «Аудио» с пресетами и плиток челки
+  async function presetsTest(main, shelf) {
+    const cp = require('child_process');
+    await wait(700);
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    await wait(500);
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close()); setPref({ material: 'none', theme: 'dark' }); document.querySelector('.tab[data-tab=audio]').click(); document.querySelectorAll('.preset')[4].click()`);
+    await wait(700);
+    main.show(); main.moveTop(); main.focus(); await wait(500);
+    const b = main.getBounds();
+    cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'presets.png')].map(String), { stdio: 'ignore' });
+    log('defaults', JSON.stringify(settings.get().defaults), '| preset applied', await main.webContents.executeJavaScript("JSON.stringify(collectOptions())"));
+    await shelf.webContents.executeJavaScript("buildTiles(new Set(['audio']), 1); setMode('drop')");
+    await wait(500);
+    const sb = shelf.getBounds();
+    cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), sb.x, sb.y, sb.width, 200, path.join(out, 'shelf-tiles.png')].map(String), { stdio: 'ignore' });
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -283,7 +301,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_SHELFGLASS) await shelfGlassTest(main, shelf2);
+      if (process.env.MEDIAVERT_PRESETS) await presetsTest(main, shelf2);
+      else if (process.env.MEDIAVERT_SHELFGLASS) await shelfGlassTest(main, shelf2);
       else if (process.env.MEDIAVERT_GLASS) await glassTest(main);
       else if (process.env.MEDIAVERT_FS) await fullscreenTest(main, shelf2);
       else if (process.env.MEDIAVERT_LAYER) await layerTest(main, shelf2);

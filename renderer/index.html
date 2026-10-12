@@ -46,7 +46,7 @@
           <span>или нажмите, чтобы выбрать · аудио, видео и картинки</span>
         </div>
         <div class="drop-kinds">
-          <span class="kind audio"><svg><use href="#i-wave"/></svg>WAV · MP3 · FLAC · AIFF</span>
+          <span class="kind audio"><svg><use href="#i-wave"/></svg>MP3 · WAV · M4A · FLAC</span>
           <span class="kind video"><svg><use href="#i-film"/></svg>MP4 · MOV · GIF</span>
           <span class="kind image"><svg><use href="#i-image"/></svg>PNG · JPG · WebP</span>
         </div>
@@ -60,7 +60,7 @@
         </div>
       </div>
       <ul class="files" id="files"></ul>
-      <p class="hint center" id="dragHint" hidden>Готовые файлы можно перетащить мышкой прямо в DAW, мессенджер или папку</p>
+      <p class="hint center" id="dragHint" hidden>Готовые файлы можно перетащить мышкой в любую программу, мессенджер или папку</p>
 
       <div class="actionbar">
         <button class="primary big" id="convertAll" disabled>Конвертировать</button>
@@ -126,12 +126,12 @@
           <label class="row"><span>Нормализация громкости</span><input type="checkbox" class="switch" name="normalize"></label>
           <label class="row sub" data-depends="normalize"><span>Цель</span>
             <select name="lufs">
-              <option value="-14">−14 LUFS · стриминг</option>
-              <option value="-16">−16 LUFS · подкасты</option>
-              <option value="-11">−11 LUFS · громко</option>
-              <option value="-9">−9 LUFS · клуб / EDM</option>
-              <option value="-8">−8 LUFS · очень громко</option>
-              <option value="-23">−23 LUFS · ТВ / EBU R128</option>
+              <option value="-14">−14 LUFS · музыка</option>
+              <option value="-16">−16 LUFS · голос</option>
+              <option value="-11">−11 LUFS · громче</option>
+              <option value="-9">−9 LUFS · громко</option>
+              <option value="-8">−8 LUFS · максимум</option>
+              <option value="-23">−23 LUFS · тихо</option>
             </select>
           </label>
           <label class="row"><span>Срезать тишину<small>в начале и в конце</small></span><input type="checkbox" class="switch" name="removeSilence"></label>
@@ -187,7 +187,7 @@
           <label class="row"><span>Ширина</span><span class="unit"><input type="number" name="width" min="8" max="16384" placeholder="авто">px</span></label>
           <label class="row column"><span>Качество JPG и WebP <b id="qVal">90</b></span><input type="range" name="imageQuality" min="1" max="100" value="90"></label>
         </div>
-        <p class="footnote">ICO автоматически уменьшается до 256×256 — подойдёт для иконок. Обложку для релиза удобно делать в JPG 3000 px.</p>
+        <p class="footnote">ICO автоматически уменьшается до 256×256 — подойдёт для иконок. Для соцсетей и почты удобно JPG шириной 1080–2000 px.</p>
       </div>
 
       <div class="trim">
@@ -292,7 +292,7 @@
           </div>
         </div>
         <h2>Добро пожаловать в Mediavert</h2>
-        <p>Конвертер для музыкантов и не только: WAV, MP3, FLAC, AIFF, видео, GIF, картинки. Всё работает <b>прямо на компьютере</b> — без интернета и загрузок на сервер.</p>
+        <p>Конвертер музыки, видео и картинок: MP3, WAV, FLAC, MP4, GIF, PNG, JPG и другие. Всё работает <b>прямо на компьютере</b> — без интернета и загрузок на сервер.</p>
         <p class="muted">Покажем за минуту три способа конвертировать.</p>
       </section>
 
@@ -306,7 +306,7 @@
         <ol>
           <li><b>Перетащите файлы</b> в окно — можно сразу пачку.</li>
           <li>У каждого файла <b>выберите формат</b>, справа — качество и <b>пресеты</b>.</li>
-          <li>Нажмите <b>«Конвертировать»</b>. Готовый файл можно <b>перетащить мышкой</b> прямо в DAW или папку.</li>
+          <li>Нажмите <b>«Конвертировать»</b>. Готовый файл можно <b>перетащить мышкой</b> в любую программу или папку.</li>
         </ol>
       </section>
 
@@ -321,7 +321,7 @@
         </div>
         <h2>«Челка» сверху экрана</h2>
         <p>Наверху по центру экрана есть тонкая полоска. <b>Тащите любой файл к верхнему краю</b> — она раскроется, отпустите файл на нужный формат.</p>
-        <p>Когда готово — <b>вытащите результат прямо из челки</b> в FL Studio, Ableton или Telegram. Клик по полоске покажет последние файлы.</p>
+        <p>Когда готово — <b>вытащите результат прямо из челки</b> в мессенджер, редактор или папку. Клик по полоске покажет последние файлы.</p>
         <div class="rows"><label class="row"><span>Включить челку</span><input type="checkbox" class="switch" data-pref="shelf"></label></div>
       </section>
 
@@ -392,7 +392,7 @@
           <div class="preview" aria-hidden="true">
             <span class="pv-btn">Конвертировать</span>
             <span class="pv-switch"></span>
-            <span class="pv-chip">DAW · WAV 24/48</span>
+            <span class="pv-chip">Для телефона · MP3</span>
             <span class="pv-link">Выбрать папку…</span>
           </div>
         </div>

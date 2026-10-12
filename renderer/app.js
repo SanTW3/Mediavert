@@ -3,22 +3,23 @@ const { FORMAT_LIST, EXT, TARGETS, KIND_LABEL } = api.formats;
 // цвет из прошлого запуска — сразу, чтобы не мелькал фиолетовый до загрузки настроек
 try { Accent.apply(localStorage.getItem('accent')); } catch {}
 
+// Повседневные задачи; тонкие настройки (разрядность, частота, LUFS) — в полях ниже
 const PRESETS = [
-  { name: 'DAW · WAV 24/48', format: 'wav', set: { sampleRate: '48000', bitDepth: '24' } },
-  { name: 'Мастер · WAV 24/44.1', format: 'wav', set: { sampleRate: '44100', bitDepth: '24' } },
-  { name: 'CD · WAV 16/44.1', format: 'wav', set: { sampleRate: '44100', bitDepth: '16' } },
-  { name: 'Сэмпл · моно 16/44.1', format: 'wav', set: { sampleRate: '44100', bitDepth: '16', channels: '1', removeSilence: true } },
-  { name: 'Демо · MP3 320', format: 'mp3', set: { sampleRate: '', bitrate: '320' } },
-  { name: 'Стриминг · −14 LUFS', format: 'wav', set: { sampleRate: '44100', bitDepth: '24', normalize: true, lufs: '-14' } },
-  { name: 'Архив · FLAC', format: 'flac', set: { sampleRate: '', bitDepth: '24' } },
-  { name: 'Apple · ALAC', format: 'alac', set: { sampleRate: '', bitDepth: '24' } },
-  { name: 'Голосовое · MP3 128 моно', format: 'mp3', set: { bitrate: '128', channels: '1' } },
+  { name: 'Для телефона · MP3', format: 'mp3', set: { sampleRate: '', bitrate: '192' } },
+  { name: 'Лучшее качество · MP3 320', format: 'mp3', set: { sampleRate: '', bitrate: '320' } },
+  { name: 'Компактно · MP3 128', format: 'mp3', set: { sampleRate: '', bitrate: '128' } },
+  { name: 'Для iPhone · M4A', format: 'aac', set: { sampleRate: '', bitrate: '256' } },
+  { name: 'Голос и подкасты', format: 'mp3', set: { bitrate: '128', channels: '1', normalize: true, lufs: '-16', removeSilence: true } },
+  { name: 'Ровная громкость', format: 'mp3', set: { sampleRate: '', bitrate: '320', normalize: true, lufs: '-14' } },
+  { name: 'Без потерь · FLAC', format: 'flac', set: { sampleRate: '', bitDepth: '24' } },
+  { name: 'Для видеомонтажа · WAV', format: 'wav', set: { sampleRate: '48000', bitDepth: '24' } },
+  { name: 'Для CD · WAV', format: 'wav', set: { sampleRate: '44100', bitDepth: '16' } },
 ];
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
-const state = { items: [], defaults: { audio: 'wav', video: 'mp4', image: 'png' }, settings: null };
+const state = { items: [], defaults: { audio: 'mp3', video: 'mp4', image: 'png' }, settings: null };
 const byJob = new Map();
 let uid = 0;
 

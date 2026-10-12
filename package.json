@@ -1,7 +1,7 @@
 {
   "name": "mediavert",
   "productName": "Mediavert",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "Конвертер аудио, видео и изображений",
   "author": "Mediavert",
   "main": "electron/main.js",
@@ -63,6 +63,12 @@
       "artifactName": "Mediavert-Setup-${version}.${ext}"
     },
     "publish": [
+      {
+        "provider": "github",
+        "owner": "SanTW3",
+        "repo": "Mediavert-releases",
+        "releaseType": "release"
+      },
       {
         "provider": "github",
         "owner": "SanTW3",

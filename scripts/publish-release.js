@@ -1,13 +1,17 @@
 // Публикация собранной версии в GitHub Releases.
 // Порядок: черновик релиза → загрузка файлов (с повторами) → публикация.
 // Пока файлы грузятся, релиз — черновик: пользователи и автообновление его не видят.
+// Публикует во все репозитории из build.publish по очереди. Автообновление в программе
+// смотрит в первый; остальные — на переходный период, для уже установленных старых версий.
 const fs = require('fs');
 const path = require('path');
 const pkg = require('../package.json');
 
 const API = process.env.GITHUB_API || 'https://api.github.com'; // переопределяется только для тестов
 const token = process.env.GH_TOKEN;
-const { owner, repo } = [].concat(pkg.build.publish)[0];
+const TARGETS = [].concat(pkg.build.publish).filter((p) => p.provider === 'github');
+let owner;
+let repo;
 const version = pkg.version;
 const tag = `v${version}`;
 const dist = process.env.RELEASE_DIST || path.join(__dirname, '..', 'dist'); // RELEASE_DIST — для тестов
@@ -130,7 +134,23 @@ async function upload(release, name) {
     throw new Error(`dist/latest.yml не соответствует версии ${version} — пересоберите проект.`);
   }
 
+  for (const target of TARGETS) {
+    ({ owner, repo } = target);
+    console.log(`\n=== github.com/${owner}/${repo}`);
+    await publishTo();
+  }
+})().catch((err) => {
+  console.error(`\nПубликация не удалась: ${explain(err)}\n`);
+  process.exit(1);
+});
+
+async function publishTo() {
   const repoInfo = await gh('GET', `/repos/${owner}/${repo}`);
+  // в пустом репозитории (без единого коммита) GitHub не даёт создать релиз
+  const commits = await fetch(`${API}/repos/${owner}/${repo}/commits?per_page=1`, { headers });
+  if (commits.status === 409) {
+    throw new Error(`Репозиторий ${owner}/${repo} пустой. Откройте его на GitHub и добавьте любой файл (например, README через «Add a README»), затем запустите публикацию снова.`);
+  }
   let release = await findRelease();
   if (release) {
     console.log(`Релиз ${tag} уже есть — заменяю в нём файлы.`);
@@ -151,8 +171,5 @@ async function upload(release, name) {
   if (release.draft) {
     release = await gh('PATCH', `/repos/${owner}/${repo}/releases/${release.id}`, { draft: false, make_latest: 'true' });
   }
-  console.log(`\nГотово! Релиз опубликован: ${release.html_url}`);
-})().catch((err) => {
-  console.error(`\nПубликация не удалась: ${explain(err)}\n`);
-  process.exit(1);
-});
+  console.log(`Готово! Релиз опубликован: ${release.html_url}`);
+}

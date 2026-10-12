@@ -21,4 +21,5 @@ if (problems.length) {
   process.exit(1);
 }
 
-console.log(`Публикую Mediavert ${pkg.version} в github.com/${pub.owner}/${pub.repo} …`);
+const all = [].concat(pkg.build.publish || []).map((p) => `github.com/${p.owner}/${p.repo}`);
+console.log(`Публикую Mediavert ${pkg.version} в: ${all.join(', ')} …`);

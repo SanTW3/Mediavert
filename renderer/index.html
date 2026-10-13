@@ -268,6 +268,7 @@
           <button class="secondary small-btn" id="updateAction">Проверить</button>
         </div>
         <label class="row"><span>Проверять автоматически<small>Новая версия скачивается в фоне и ставится при перезапуске</small></span><input type="checkbox" class="switch" data-pref="autoUpdate"></label>
+        <div class="row"><span>Что нового<small>Изменения в последних версиях</small></span><button class="secondary small-btn" id="openWhatsNew">Открыть</button></div>
       </div>
 
       <p class="footnote">Качество для челки и меню Проводника берётся из вкладок «Аудио», «Видео» и «Фото» в главном окне.</p>
@@ -275,6 +276,22 @@
     <div class="modal-foot">
       <button class="link" id="replayGuide">Показать гайд ещё раз</button>
       <button class="primary" data-close autofocus>Готово</button>
+    </div>
+  </dialog>
+
+  <!-- ЧТО НОВОГО -->
+  <dialog class="modal whatsnew" id="whatsNewDialog">
+    <div class="wn-hero">
+      <img src="../assets/icon.png" width="56" height="56" alt="">
+      <div>
+        <div class="wn-kicker">Mediavert обновился</div>
+        <h2 id="whatsNewTitle">Что нового</h2>
+      </div>
+    </div>
+    <div class="modal-body" id="whatsNewBody"></div>
+    <div class="modal-foot">
+      <span class="footnote" id="whatsNewFoot"></span>
+      <button class="primary" data-close autofocus>Отлично</button>
     </div>
   </dialog>
 

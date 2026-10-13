@@ -310,8 +310,9 @@ function closeDialog(dlg) {
 }
 
 const accentDialog = $('#accentDialog');
+const whatsNewDialog = $('#whatsNewDialog');
 
-for (const dlg of [prefsDialog, guideDialog, accentDialog]) {
+for (const dlg of [prefsDialog, guideDialog, accentDialog, whatsNewDialog]) {
   $$('[data-close]', dlg).forEach((b) => b.addEventListener('click', () => closeDialog(dlg)));
   // клик по затемнению вокруг окна закрывает его
   dlg.addEventListener('click', (e) => {
@@ -365,7 +366,7 @@ guideDialog.addEventListener('keydown', (e) => {
 guideDialog.addEventListener('close', () => {
   // первый запуск: после гайда предлагаем выбрать цвет
   if (!state.settings?.onboardingDone) {
-    setPref({ onboardingDone: true });
+    api.getVersion().then((v) => setPref({ onboardingDone: true, lastSeenVersion: v }));
     setTimeout(() => openAccent(true), 180);
   }
 });
@@ -761,8 +762,78 @@ document.addEventListener('drop', (e) => {
 });
 api.on('files:add', addPaths);
 
-api.getSettings().then((s) => {
+/* ---------- что нового ---------- */
+
+const MAX_WHATSNEW = 5; // если пропущено много версий — показываем последние
+const cmpVersions = (a, b) => {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+};
+
+// since — последняя версия, изменения которой уже видели (null — показать текущую)
+function openWhatsNew(current, since, { afterUpdate = false } = {}) {
+  const upTo = (api.changelog || []).filter((e) => cmpVersions(e.version, current) <= 0);
+  let entries = upTo.filter((e) => !since || cmpVersions(e.version, since) > 0);
+  if (!since && !afterUpdate) entries = upTo; // открыли вручную — вся недавняя история
+  if (!entries.length) entries = upTo.slice(0, 1);
+  if (!entries.length) return false;
+  const hidden = Math.max(entries.length - MAX_WHATSNEW, 0);
+  const body = $('#whatsNewBody');
+  body.innerHTML = '';
+  for (const e of entries.slice(0, MAX_WHATSNEW)) {
+    const head = document.createElement('div');
+    head.className = 'wn-version';
+    head.textContent = `Версия ${e.version}`;
+    if (e.version === current) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = 'сейчас';
+      head.append(tag);
+    }
+    const ul = document.createElement('ul');
+    ul.className = 'wn-list';
+    for (const item of e.items) {
+      const li = document.createElement('li');
+      li.textContent = item;
+      ul.append(li);
+    }
+    body.append(head, ul);
+  }
+  if (hidden) {
+    const more = document.createElement('p');
+    more.className = 'wn-more';
+    more.textContent = `…и ещё изменения в более ранних версиях (${hidden})`;
+    body.append(more);
+  }
+  $('.wn-kicker', whatsNewDialog).textContent = afterUpdate ? 'Mediavert обновился' : `Mediavert ${current}`;
+  $('#whatsNewTitle').textContent = afterUpdate ? `Что нового в ${current}` : 'Что нового';
+  $('#whatsNewFoot').textContent = since && afterUpdate ? `Было: ${since}` : '';
+  if (prefsDialog.open) prefsDialog.close();
+  whatsNewDialog.showModal();
+  return true;
+}
+
+$('#openWhatsNew').onclick = () => api.getVersion().then((v) => openWhatsNew(v, null));
+// закрыли — запоминаем, что эту версию человек уже видел
+whatsNewDialog.addEventListener('close', () => {
+  api.getVersion().then((v) => {
+    const seen = state.settings?.lastSeenVersion;
+    if (!seen || cmpVersions(seen, v) < 0) setPref({ lastSeenVersion: v });
+  });
+});
+
+api.getSettings().then(async (s) => {
   applySettingsToUI(s);
-  if (!s.onboardingDone) openGuide();
+  if (!s.onboardingDone) return openGuide();
+  // программа обновилась с прошлого запуска — показываем, что изменилось
+  const current = await api.getVersion();
+  if (!s.lastSeenVersion || cmpVersions(s.lastSeenVersion, current) < 0) {
+    setTimeout(() => openWhatsNew(current, s.lastSeenVersion, { afterUpdate: true }), 400);
+  }
 });
 refresh();

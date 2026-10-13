@@ -539,6 +539,21 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 8px 0 2p
 .small-seg { flex: none; }
 .small-seg button { height: 26px; padding: 0 10px; font-size: 12px; }
 
+/* что нового */
+.whatsnew { width: min(520px, calc(100vw - 32px)); }
+.wn-hero { display: flex; align-items: center; gap: 16px; padding: 24px 24px 8px; }
+.wn-hero img { border-radius: 14px; box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 35%, transparent); }
+.wn-kicker { color: var(--accent-text); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.wn-hero h2 { margin: 2px 0 0; font: 700 22px/1.2 var(--font-display); letter-spacing: -.02em; }
+.wn-version { margin: 18px 4px 8px; font-size: 12px; font-weight: 600; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+.wn-version .tag { background: var(--accent-soft); color: var(--accent-text); border-radius: 10px; padding: 2px 8px; font-size: 11px; }
+.wn-list { list-style: none; margin: 0; padding: 4px 0; background: var(--surface); border-radius: var(--r-m); box-shadow: var(--shadow-1); }
+html.glass .wn-list { background: color-mix(in srgb, var(--surface) var(--glass-card, 85%), transparent); }
+.wn-list li { position: relative; padding: 10px 14px 10px 36px; line-height: 1.45; }
+.wn-list li + li::before { content: ""; position: absolute; top: 0; left: 36px; right: 0; border-top: 1px solid var(--sep); }
+.wn-list li::after { content: ""; position: absolute; left: 15px; top: 17px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.wn-more { color: var(--text-3); font-size: 12px; margin: 12px 4px 0; }
+
 /* обновления */
 .update-pill { background: var(--accent); color: var(--on-accent); font-weight: 600; animation: pill-in .4s cubic-bezier(.3, 1.3, .5, 1); }
 .update-pill:hover { background: var(--accent-hover); color: var(--on-accent); }

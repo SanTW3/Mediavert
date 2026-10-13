@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const pkg = require('../package.json');
+const { CHANGELOG } = require('../lib/changelog');
 
 const API = process.env.GITHUB_API || 'https://api.github.com'; // переопределяется только для тестов
 const token = process.env.GH_TOKEN;
@@ -46,6 +47,13 @@ function explain(err) {
   if (err.status === 403) return 'Нет прав (403). У токена должно быть Contents: Read and write для репозитория ' + `${owner}/${repo}.`;
   if (err.status === 404) return `Репозиторий ${owner}/${repo} не найден или токен не имеет к нему доступа (404).`;
   return err.message;
+}
+
+// Описание релиза: что нового (из lib/changelog.js) и как установить
+function releaseNotes() {
+  const entry = CHANGELOG.find((e) => e.version === version);
+  const changes = entry ? `### Что нового\n\n${entry.items.map((i) => `- ${i}`).join('\n')}\n\n` : '';
+  return `${changes}### Установка\n\nСкачайте **${installer}** ниже и запустите. Уже установленный Mediavert обновится сам.`;
 }
 
 async function findRelease() {
@@ -159,7 +167,7 @@ async function publishTo() {
       tag_name: tag,
       target_commitish: repoInfo.default_branch,
       name: version,
-      body: `Mediavert ${version}\n\nСкачайте **${installer}** ниже и запустите. Уже установленный Mediavert обновится сам.`,
+      body: releaseNotes(),
       draft: true,
     });
     console.log(`Создан черновик релиза ${tag}.`);

@@ -2,11 +2,13 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { FORMAT_LIST, EXT, TARGETS, KIND_LABEL } = require('../lib/formats');
+const { CHANGELOG } = require('../lib/changelog');
 
 const EVENTS = ['job:update', 'files:add', 'shelf:pointer-left', 'settings:changed', 'guide:open', 'update:status', 'morph:play', 'morph:fade', 'window:enter', 'window:prepare', 'shelf:morph-started', 'shelf:away', 'shelf:glass'];
 
 contextBridge.exposeInMainWorld('api', {
   formats: { FORMAT_LIST, EXT, TARGETS, KIND_LABEL },
+  changelog: CHANGELOG,
   platform: { mica: process.argv.includes('--mediavert-mica') },
 
   pathForFile: (file) => webUtils.getPathForFile(file),

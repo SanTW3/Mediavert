@@ -16,6 +16,12 @@ if (!process.env.GH_TOKEN) {
   );
 }
 
+// у каждой выпускаемой версии должно быть описание для окна «Что нового»
+const { CHANGELOG } = require('../lib/changelog');
+if (!CHANGELOG.some((e) => e.version === pkg.version)) {
+  problems.push(`В lib/changelog.js нет записи для версии ${pkg.version} — опишите, что изменилось (это увидят пользователи после обновления).`);
+}
+
 if (problems.length) {
   console.error('\nПубликация невозможна:\n' + problems.map((p) => ' • ' + p).join('\n') + '\n');
   process.exit(1);

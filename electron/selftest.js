@@ -231,6 +231,23 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     const sb = shelf.getBounds();
     cp.spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), sb.x, sb.y, sb.width, 200, path.join(out, 'shelf-tiles.png')].map(String), { stdio: 'ignore' });
   }
+
+  // окно «Что нового» после обновления
+  async function whatsNewTest(main) {
+    await wait(1200);
+    const info = await main.webContents.executeJavaScript(`JSON.stringify({ open: whatsNewDialog.open, title: $('#whatsNewTitle').textContent, versions: [...document.querySelectorAll('.wn-version')].map((e) => e.textContent), foot: $('#whatsNewFoot').textContent })`);
+    log('whatsnew after start:', info);
+    main.moveTop(); main.focus(); await wait(300);
+    const b = main.getBounds();
+    require('child_process').spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grab.ps1'), b.x, b.y, b.width, b.height, path.join(out, 'whatsnew.png')].map(String), { stdio: 'ignore' });
+    await main.webContents.executeJavaScript("document.querySelector('#whatsNewDialog .modal-foot .primary').click()");
+    await wait(800);
+    log('after close: lastSeenVersion =', settings.get().lastSeenVersion, '| dialog open', await main.webContents.executeJavaScript('whatsNewDialog.open'));
+    // повторный запуск страницы — окно больше не должно появляться
+    main.webContents.reload();
+    await wait(2500);
+    log('after reload: dialog open', await main.webContents.executeJavaScript('whatsNewDialog.open'));
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -239,6 +256,7 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
 
   try {
     settings.set({ outputMode: 'folder', outputDir: path.join(dir, 'out') });
+    if (process.env.MEDIAVERT_WHATSNEW) settings.set({ onboardingDone: true, lastSeenVersion: process.env.MEDIAVERT_WHATSNEW === 'none' ? null : process.env.MEDIAVERT_WHATSNEW });
 
     // челка: состояния и размеры окна
     let shelf;
@@ -301,7 +319,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_PRESETS) await presetsTest(main, shelf2);
+      if (process.env.MEDIAVERT_WHATSNEW) await whatsNewTest(main);
+      else if (process.env.MEDIAVERT_PRESETS) await presetsTest(main, shelf2);
       else if (process.env.MEDIAVERT_SHELFGLASS) await shelfGlassTest(main, shelf2);
       else if (process.env.MEDIAVERT_GLASS) await glassTest(main);
       else if (process.env.MEDIAVERT_FS) await fullscreenTest(main, shelf2);

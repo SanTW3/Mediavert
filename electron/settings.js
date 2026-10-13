@@ -21,6 +21,7 @@ function defaults() {
     theme: 'system',
     accent: '#6a4dff',
     autoUpdate: true,
+    lastSeenVersion: null, // версия, «Что нового» которой человек уже видел
     material: 'mica', // mica — «Размытие» (простое размытие того, что позади), acrylic — акрил, none — сплошной фон
     glass: 30, // прозрачность фона окна, %
     hideInFullscreen: true, // прятать челку, пока открыто полноэкранное приложение

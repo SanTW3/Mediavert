@@ -1,7 +1,7 @@
 {
   "name": "mediavert",
   "productName": "Mediavert",
-  "version": "2.7.1",
+  "version": "2.8.0",
   "description": "Конвертер аудио, видео и изображений",
   "author": "Mediavert",
   "main": "electron/main.js",

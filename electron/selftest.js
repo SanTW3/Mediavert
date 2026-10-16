@@ -309,6 +309,65 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
       backdrop.destroy();
     }
   }
+
+  // «жидкое стекло»: перетаскивание вкладок и переключателей настоящими событиями мыши
+  async function liquidTest(main) {
+    const cp = require('child_process');
+    await wait(800);
+    for (let i = 0; i < 2; i++) { await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`); await wait(500); }
+    const wc = main.webContents;
+    const rect = (sel) => wc.executeJavaScript(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; })()`);
+    const mouse = (type, x, y) => wc.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
+    const shot = async (name, region) => {
+      const img = await wc.capturePage(region);
+      fs.writeFileSync(path.join(out, name + '.png'), img.resize({ width: region.width * 3 }).toPNG());
+    };
+    for (const theme of ['dark', 'light']) {
+      await wc.executeJavaScript(`setPref({ material: 'none', theme: '${theme}' }); document.querySelector('.tab[data-tab=audio]').click()`);
+      await wait(700);
+      const img = await wc.capturePage();
+      fs.writeFileSync(path.join(out, `color-${theme}.png`), img.toPNG());
+    }
+    // 1) тянем «Аудио» на «Фото»
+    const a = await rect('.tab[data-tab=audio]');
+    const p = await rect('.tab[data-tab=image]');
+    const segBox = await wc.executeJavaScript("(() => { const r = document.querySelector('.tabs').getBoundingClientRect(); return { x: Math.round(r.left) - 6, y: Math.round(r.top) - 8, width: Math.round(r.width) + 12, height: Math.round(r.height) + 16 }; })()");
+    mouse('mouseDown', a.x, a.y);
+    for (let i = 1; i <= 12; i++) { mouse('mouseMove', a.x + ((p.x - a.x) * i) / 12 * 0.55, a.y); await wait(16); }
+    await wait(40);
+    await shot('liquid-tab-mid', segBox);
+    for (let i = 1; i <= 8; i++) { mouse('mouseMove', a.x + (p.x - a.x) * (0.55 + 0.45 * i / 8), a.y); await wait(16); }
+    mouse('mouseUp', p.x, p.y);
+    await wait(700);
+    log('tab drag → active:', await wc.executeJavaScript("document.querySelector('.tab.active').dataset.tab"), '| panel:', await wc.executeJavaScript("document.querySelector('.panel.active').dataset.panel"));
+    await shot('liquid-tab-after', segBox);
+    // 2) кружок нормализации: тянем вправо
+    await wc.executeJavaScript("document.querySelector('.tab[data-tab=audio]').click()");
+    await wait(600);
+    const sw = await rect('input[name=normalize]');
+    const before = await wc.executeJavaScript("document.querySelector('input[name=normalize]').checked");
+    const swBox = { x: Math.round(sw.x - 40), y: Math.round(sw.y - 20), width: 80, height: 40 };
+    mouse('mouseDown', sw.x - 8, sw.y);
+    for (let i = 1; i <= 6; i++) { mouse('mouseMove', sw.x - 8 + i * 1.6, sw.y); await wait(16); }
+    await wait(60);
+    await shot('liquid-switch-mid', swBox);
+    for (let i = 1; i <= 6; i++) { mouse('mouseMove', sw.x + 2 + i * 1.6, sw.y); await wait(16); }
+    mouse('mouseUp', sw.x + 12, sw.y);
+    await wait(700);
+    const after = await wc.executeJavaScript("document.querySelector('input[name=normalize]').checked");
+    log('switch drag: before', before, '→ after', after, '| LUFS row visible', await wc.executeJavaScript("!document.querySelector('[data-depends=normalize]').hidden"));
+    await wait(400);
+    log('saved setting normalize =', settings.get().options.normalize);
+    // 3) обычный клик по переключателю по-прежнему работает
+    mouse('mouseDown', sw.x, sw.y); await wait(30); mouse('mouseUp', sw.x, sw.y);
+    await wait(500);
+    log('switch click → checked', await wc.executeJavaScript("document.querySelector('input[name=normalize]').checked"));
+    // 4) обычный клик по вкладке
+    const v = await rect('.tab[data-tab=video]');
+    mouse('mouseDown', v.x, v.y); await wait(30); mouse('mouseUp', v.x, v.y);
+    await wait(500);
+    log('tab click → active:', await wc.executeJavaScript("document.querySelector('.tab.active').dataset.tab"));
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -380,7 +439,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_CONTRAST) await contrastTest(main);
+      if (process.env.MEDIAVERT_LIQUID) await liquidTest(main);
+      else if (process.env.MEDIAVERT_CONTRAST) await contrastTest(main);
       else if (process.env.MEDIAVERT_MAXIMIZE) await maximizeTest(main);
       else if (process.env.MEDIAVERT_WHATSNEW) await whatsNewTest(main);
       else if (process.env.MEDIAVERT_PRESETS) await presetsTest(main, shelf2);

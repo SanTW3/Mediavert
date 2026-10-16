@@ -282,6 +282,33 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     }
     backdrop.destroy();
   }
+
+  // контраст текста в «стеклянном» режиме: светлая тема на тёмном фоне и наоборот
+  async function contrastTest(main) {
+    const cp = require('child_process');
+    await wait(800);
+    for (let i = 0; i < 2; i++) { await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`); await wait(500); }
+    await main.webContents.executeJavaScript("document.querySelector('.tab[data-tab=audio]').click()");
+    const d = require('electron').screen.getPrimaryDisplay().bounds;
+    for (const [theme, bg] of [['light', '#1c1c22'], ['dark', '#f4f4f4']]) {
+      const backdrop = new BrowserWindow({ x: d.x, y: d.y, width: d.width, height: d.height, frame: false, show: false, focusable: false, title: 'Backdrop' });
+      await backdrop.loadURL('data:text/html,' + encodeURIComponent(`<body style="margin:0;height:100vh;background:${bg}"></body>`));
+      backdrop.showInactive();
+      for (const glass of [50, 90]) {
+        await main.webContents.executeJavaScript(`setPref({ material: 'mica', glass: ${glass}, theme: '${theme}' })`);
+        main.setBounds({ x: d.x + 300, y: d.y + 120, width: 1180, height: 760 }); main.show(); main.moveTop(); main.focus();
+        await wait(1000);
+        // снимок содержимого окна (с прозрачностью) поверх того же сплошного цвета, что позади:
+        // размытие сплошного цвета даёт тот же цвет, так что картинка точная
+        const img = await main.webContents.capturePage();
+        const raw = path.join(out, `raw-${theme}-${glass}.png`);
+        fs.writeFileSync(raw, img.toPNG());
+        cp.spawnSync('powershell', ['-NoProfile', '-Command', `Add-Type -AssemblyName System.Drawing; $i=[Drawing.Image]::FromFile('${raw}'); $o=New-Object Drawing.Bitmap $i.Width,$i.Height; $g=[Drawing.Graphics]::FromImage($o); $g.Clear([Drawing.ColorTranslator]::FromHtml('${bg}')); $g.DrawImage($i,0,0,$i.Width,$i.Height); $o.Save('${path.join(out, `contrast-${theme}-${glass}.png`)}')`], { stdio: 'ignore' });
+        log('contrast', theme, glass);
+      }
+      backdrop.destroy();
+    }
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -353,7 +380,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_MAXIMIZE) await maximizeTest(main);
+      if (process.env.MEDIAVERT_CONTRAST) await contrastTest(main);
+      else if (process.env.MEDIAVERT_MAXIMIZE) await maximizeTest(main);
       else if (process.env.MEDIAVERT_WHATSNEW) await whatsNewTest(main);
       else if (process.env.MEDIAVERT_PRESETS) await presetsTest(main, shelf2);
       else if (process.env.MEDIAVERT_SHELFGLASS) await shelfGlassTest(main, shelf2);

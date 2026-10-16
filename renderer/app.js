@@ -159,9 +159,10 @@ function applyGlass(s) {
   const root = document.documentElement;
   root.classList.toggle('glass', supported && material !== 'none');
   // панели и карточки чуть плотнее фона, чтобы текст оставался читаемым
-  root.style.setProperty('--glass-bg', `${100 - t}%`);
-  root.style.setProperty('--glass-panel', `${100 - t * 0.8}%`);
-  root.style.setProperty('--glass-card', `${100 - t * 0.5}%`);
+  // фон под текстом не становится совсем прозрачным, чтобы подписи читались на любом фоне позади
+  root.style.setProperty('--glass-bg', `${100 - t * 0.75}%`);
+  root.style.setProperty('--glass-panel', `${100 - t * 0.6}%`);
+  root.style.setProperty('--glass-card', `${100 - t * 0.4}%`);
 
   $('#glassSection').hidden = !supported;
   $$('#materialSeg button').forEach((b) => b.classList.toggle('active', b.dataset.material === material));

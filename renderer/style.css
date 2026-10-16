@@ -89,6 +89,26 @@ html.glass .drop,
 html.glass .files,
 html.glass .rows { background: color-mix(in srgb, var(--surface) var(--glass-card, 85%), transparent); }
 html.glass .drop.over { background: var(--accent-soft); }
+/* Позади окна может быть что угодно — и тёмное, и светлое. Приглушённый текст делаем ближе
+   к основному цвету, а подписям вне карточек даём лёгкий ореол цвета фона. */
+html.glass {
+  --text-2: color-mix(in srgb, var(--text) 80%, var(--bg));
+  --text-3: color-mix(in srgb, var(--text) 64%, var(--bg));
+}
+html.glass .titlebar,
+html.glass .group-title,
+html.glass .list-head,
+html.glass .footnote,
+html.glass .hint,
+html.glass .drop-text { text-shadow: 0 0 8px color-mix(in srgb, var(--bg) 85%, transparent), 0 0 2px color-mix(in srgb, var(--bg) 70%, transparent); }
+html.glass .tool.accent { background: var(--accent); color: var(--on-accent); }
+/* кнопки шапки лежат прямо на почти прозрачном фоне — даём им свою подложку */
+html.glass .tool:not(.accent) { background: color-mix(in srgb, var(--bg) 78%, transparent); color: var(--text); }
+html.glass .tool:not(.accent):hover { background: color-mix(in srgb, var(--bg) 92%, transparent); }
+html.glass .list-head { color: var(--text); }
+html.glass .segmented { background: color-mix(in srgb, var(--bg) 72%, transparent); }
+html.glass .segmented button:not(.active) { color: var(--text-2); }
+
 html.glass .modal {
   background: color-mix(in srgb, var(--bg) var(--glass-card, 85%), transparent);
   backdrop-filter: blur(28px) saturate(1.3);

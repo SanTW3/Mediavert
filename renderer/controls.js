@@ -26,6 +26,7 @@
 
     input.addEventListener('pointermove', (e) => {
       if (!s) return;
+      if (!(e.buttons & 1)) return cleanup(); // кнопку отпустили, а событие до нас не дошло
       const dx = e.clientX - s.x;
       if (!s.moved && Math.abs(dx) < DRAG_START) return;
       s.moved = true;
@@ -47,6 +48,8 @@
       cleanup();
     });
     input.addEventListener('pointercancel', cleanup);
+    input.addEventListener('lostpointercapture', () => s && cleanup());
+    window.addEventListener('blur', () => s && cleanup());
 
     input.addEventListener('click', (e) => {
       if (!suppressClick) return;
@@ -90,8 +93,17 @@
       seg.classList.add('lifted');
     });
 
+    // Отмена без переключения: «пилюля» возвращается на выбранную вкладку
+    const cancel = () => {
+      if (!s) return;
+      finish();
+      if (typeof moveThumb === 'function') moveThumb(seg);
+    };
+
     seg.addEventListener('pointermove', (e) => {
       if (!s) return;
+      // кнопку отпустили вне окна или её «съел» скриншот — заканчиваем там, где сейчас «пилюля»
+      if (!(e.buttons & 1)) return release();
       const dx = e.clientX - s.x;
       if (!s.dragging) {
         if (Math.abs(dx) < DRAG_START) return;
@@ -113,7 +125,7 @@
       buttons().forEach((b) => b.classList.toggle('under', b === under));
     });
 
-    const release = () => {
+    function release() {
       if (!s) return;
       if (s.dragging) {
         const target = nearest((s.x2 ?? s.base) + 3 + s.w / 2);
@@ -123,9 +135,14 @@
       } else {
         finish();
       }
-    };
+    }
     seg.addEventListener('pointerup', release);
-    seg.addEventListener('pointercancel', release);
+    seg.addEventListener('pointercancel', cancel);
+    seg.addEventListener('lostpointercapture', () => s?.dragging && cancel());
+    // нажали, но не потянули и отпустили где-то ещё — просто снимаем «приподнятость»
+    document.addEventListener('pointerup', () => s && !s.dragging && finish());
+    window.addEventListener('blur', cancel);
+    document.addEventListener('visibilitychange', () => document.hidden && cancel());
   }
 
   document.querySelectorAll('input.switch').forEach(enhanceSwitch);

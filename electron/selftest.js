@@ -317,12 +317,12 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     for (let i = 0; i < 2; i++) { await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`); await wait(500); }
     const wc = main.webContents;
     const rect = (sel) => wc.executeJavaScript(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; })()`);
-    const mouse = (type, x, y) => wc.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
+    const mouse = (type, x, y) => wc.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1, modifiers: type === 'mouseMove' ? ['leftButtonDown'] : [] });
     const shot = async (name, region) => {
       const img = await wc.capturePage(region);
       fs.writeFileSync(path.join(out, name + '.png'), img.resize({ width: region.width * 3 }).toPNG());
     };
-    for (const theme of ['dark', 'light']) {
+    for (const theme of ['light', 'dark']) {
       await wc.executeJavaScript(`setPref({ material: 'none', theme: '${theme}' }); document.querySelector('.tab[data-tab=audio]').click()`);
       await wait(700);
       const img = await wc.capturePage();
@@ -367,6 +367,37 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     mouse('mouseDown', v.x, v.y); await wait(30); mouse('mouseUp', v.x, v.y);
     await wait(500);
     log('tab click → active:', await wc.executeJavaScript("document.querySelector('.tab.active').dataset.tab"));
+  }
+
+  // «залипание» перетаскивания: потеря фокуса и движение без зажатой кнопки
+  async function stuckTest(main) {
+    await wait(800);
+    for (let i = 0; i < 2; i++) { await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`); await wait(500); }
+    const wc = main.webContents;
+    await wc.executeJavaScript("setPref({ material: 'none', theme: 'dark' }); document.querySelector('.tab[data-tab=audio]').click()");
+    await wait(600);
+    const rect = (sel) => wc.executeJavaScript(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const state = () => wc.executeJavaScript("JSON.stringify({ cls: document.querySelector('.tabs').className, active: document.querySelector('.tab.active').dataset.tab, thumb: document.querySelector('.tabs .seg-thumb').style.transform })");
+    const a = await rect('.tab[data-tab=audio]');
+    const v = await rect('.tab[data-tab=video]');
+    const down = () => wc.sendInputEvent({ type: 'mouseDown', x: a.x, y: a.y, button: 'left', clickCount: 1 });
+    const drag = async (to) => { for (let i = 1; i <= 6; i++) { wc.sendInputEvent({ type: 'mouseMove', x: Math.round(a.x + (to - a.x) * i / 6), y: Math.round(a.y), button: 'left', modifiers: ['leftButtonDown'] }); await wait(16); } };
+    // 1) тянем и окно теряет фокус (как при скриншоте)
+    down(); await drag(v.x); await wait(50);
+    log('1 dragging:', await state());
+    wc.executeJavaScript("window.dispatchEvent(new Event('blur'))");
+    await wait(600);
+    log('1 after blur:', await state());
+    // движение мыши без кнопки — «пилюля» не должна ехать
+    for (let i = 0; i < 5; i++) { wc.sendInputEvent({ type: 'mouseMove', x: Math.round(v.x + 40 + i * 10), y: Math.round(a.y) }); await wait(16); }
+    await wait(300);
+    log('1 moves w/o button:', await state());
+    // 2) тянем, а следующее движение приходит уже без зажатой кнопки (отпустили вне окна)
+    wc.sendInputEvent({ type: 'mouseUp', x: a.x, y: a.y, button: 'left' }); await wait(200);
+    down(); await drag(v.x); await wait(50);
+    for (let i = 0; i < 4; i++) { wc.sendInputEvent({ type: 'mouseMove', x: Math.round(v.x + 60 + i * 10), y: Math.round(a.y) }); await wait(16); }
+    await wait(600);
+    log('2 after buttonless move:', await state());
   }
   const finishAll = () =>
     new Promise((resolve) => {
@@ -439,7 +470,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_LIQUID) await liquidTest(main);
+      if (process.env.MEDIAVERT_STUCK) await stuckTest(main);
+      else if (process.env.MEDIAVERT_LIQUID) await liquidTest(main);
       else if (process.env.MEDIAVERT_CONTRAST) await contrastTest(main);
       else if (process.env.MEDIAVERT_MAXIMIZE) await maximizeTest(main);
       else if (process.env.MEDIAVERT_WHATSNEW) await whatsNewTest(main);

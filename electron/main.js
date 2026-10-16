@@ -52,6 +52,8 @@ function applyMaterial() {
     mainWin.setBackgroundMaterial(on ? m : 'none');
   }
   mainWin.setBackgroundColor(on ? '#00000000' : solidBg());
+  // в «стеклянных» режимах — без анимации сворачивания/разворачивания, иначе окно на миг становится прозрачным
+  blur.setTransitions(mainWin, !on);
   mainWin.setTitleBarOverlay(titleBarColors());
 }
 

@@ -80,4 +80,15 @@ function placeBelow(win, above, x, y, w, h) {
   } catch {}
 }
 
-module.exports = { setBlur, styleUnderlay, placeBelow, available: () => !!load() };
+const DWMWA_TRANSITIONS_FORCEDISABLED = 3;
+// Системная анимация сворачивания/разворачивания окна. Во время неё Windows показывает
+// «снимок» окна без размытия фона — у полупрозрачного окна это выглядит как прозрачная вспышка.
+function setTransitions(win, enabled) {
+  const a = load();
+  if (!a || !win || win.isDestroyed()) return;
+  try {
+    a.DwmSetWindowAttribute(handleOf(win), DWMWA_TRANSITIONS_FORCEDISABLED, [enabled ? 0 : 1], 4);
+  } catch {}
+}
+
+module.exports = { setBlur, styleUnderlay, placeBelow, setTransitions, available: () => !!load() };

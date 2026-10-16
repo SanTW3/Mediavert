@@ -248,6 +248,40 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     await wait(2500);
     log('after reload: dialog open', await main.webContents.executeJavaScript('whatsNewDialog.open'));
   }
+
+  // разворачивание/сворачивание окна в разных режимах прозрачности — покадрово
+  async function maximizeTest(main) {
+    const cp = require('child_process');
+    await wait(800);
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    await wait(500);
+    await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`);
+    const d = require('electron').screen.getPrimaryDisplay().bounds;
+    const backdrop = new BrowserWindow({ x: d.x, y: d.y, width: d.width, height: d.height, frame: false, show: false, focusable: false, title: 'Backdrop' });
+    await backdrop.loadURL('data:text/html,' + encodeURIComponent('<body style="margin:0;height:100vh;background:repeating-linear-gradient(90deg,#e63946 0 160px,#f1c40f 160px 320px,#2ecc71 320px 480px,#3498db 480px 640px)"></body>'));
+    backdrop.showInactive();
+    const modes = (process.env.MEDIAVERT_MAXIMIZE || 'mica,acrylic,none').split(',');
+    for (const material of modes) {
+      await main.webContents.executeJavaScript(`setPref({ material: '${material}', glass: 50, theme: 'dark' })`);
+      main.unmaximize(); main.setBounds({ x: d.x + 300, y: d.y + 150, width: 1000, height: 650 }); main.show(); main.focus();
+      await wait(1200);
+      const rec = async (name, act) => {
+        const prefix = path.join(out, name);
+        fs.rmSync(`${prefix}.ready`, { force: true });
+        const p = cp.spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(dir, 'grabseq2.ps1'), d.x, d.y, d.width, d.height, 8, prefix, 0.22, 4].map(String), { stdio: 'ignore' });
+        while (!fs.existsSync(`${prefix}.ready`)) await wait(20);
+        await wait(40);
+        act();
+        await new Promise((r) => p.on('exit', r));
+      };
+      await rec(`max-${material}`, () => main.maximize());
+      await wait(600);
+      await rec(`unmax-${material}`, () => main.unmaximize());
+      await wait(600);
+      log('recorded', material);
+    }
+    backdrop.destroy();
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -319,7 +353,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_WHATSNEW) await whatsNewTest(main);
+      if (process.env.MEDIAVERT_MAXIMIZE) await maximizeTest(main);
+      else if (process.env.MEDIAVERT_WHATSNEW) await whatsNewTest(main);
       else if (process.env.MEDIAVERT_PRESETS) await presetsTest(main, shelf2);
       else if (process.env.MEDIAVERT_SHELFGLASS) await shelfGlassTest(main, shelf2);
       else if (process.env.MEDIAVERT_GLASS) await glassTest(main);

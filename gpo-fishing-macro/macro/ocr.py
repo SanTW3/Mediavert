@@ -55,8 +55,12 @@ async def _recognize(engine, rgb):
     return result.text or ""
 
 
-def read_text(rgb):
-    """rgb — HxWx3 uint8. Возвращает распознанный текст или ""."""
+last_error = None
+
+
+def read_text(rgb, raise_errors=False):
+    """rgb — HxWx3 uint8. Возвращает распознанный текст или "" (ошибку — в ocr.last_error)."""
+    global last_error
     engine = _get_engine() if sys.platform == "win32" else None
     if engine is None:
         return ""
@@ -68,6 +72,9 @@ def read_text(rgb):
         k = 60 / max(img.height, 1)
         img = img.resize((int(img.width * k), 60), Image.LANCZOS)
     try:
-        return asyncio.run(_recognize(engine, np.asarray(img)))
-    except Exception:
+        return asyncio.run(_recognize(engine, np.ascontiguousarray(np.asarray(img))))
+    except Exception as exc:
+        last_error = exc
+        if raise_errors:
+            raise
         return ""

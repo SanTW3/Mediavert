@@ -396,6 +396,6 @@ def test_windows_ocr_reads_text():
     img = Image.new("RGB", (420, 60), (20, 30, 60))
     font = ImageFont.truetype("arialbd.ttf", 32)
     ImageDraw.Draw(img).text((10, 10), "You caught a Golden Carp!", font=font, fill=(255, 255, 255))
-    text = ocr.read_text(np.asarray(img))
+    text = ocr.read_text(np.asarray(img), raise_errors=True)
     print("OCR:", repr(text))
     assert clean_name(text) == "Golden Carp"

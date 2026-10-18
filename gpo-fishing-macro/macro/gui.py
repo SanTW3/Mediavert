@@ -28,20 +28,10 @@ LLMHF_INJECTED = 0x01
 
 DIGITS = [str(d) for d in range(10)]
 
-# Палитра
-BG = "#0f1419"
-CARD = "#1a2129"
-CARD_BORDER = "#26303b"
-FIELD = "#232c36"
-TEXT = "#e6edf3"
-MUTED = "#7d8b99"
-ACCENT = "#3b8eea"
-ACCENT_HOVER = "#2f74c4"
-GREEN = "#2ea043"
-GREEN_HOVER = "#268a39"
-RED = "#da3633"
-RED_HOVER = "#b42d2a"
-ORANGE = "#d29922"
+# Палитра — морская тема в духе Persona 3 Reload (macro/theme.py)
+from .theme import (ACCENT, ACCENT_HOVER, BG, CARD, CARD_BORDER, FIELD, GREEN, GREEN_HOVER,  # noqa: E402
+                    HILITE, MUTED, ORANGE, RED, RED_HOVER, TEXT, WARN_BG)
+from . import theme  # noqa: E402
 
 STATUS_COLORS = {"red": RED, "green": GREEN, "blue": ACCENT, "orange": ORANGE}
 
@@ -121,15 +111,23 @@ class App:
         self.events = queue.Queue()
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
+        # Резкие углы, как в меню P3R
+        for widget, radius in (("CTkButton", 2), ("CTkEntry", 2), ("CTkOptionMenu", 2),
+                               ("CTkSegmentedButton", 2), ("CTkTextbox", 2)):
+            ctk.ThemeManager.theme[widget]["corner_radius"] = radius
         self.root = ctk.CTk(fg_color=BG)
         self.root.title("GPO Fishing Macro")
-        self.root.geometry("600x720")
-        self.root.minsize(540, 560)
+        self.root.geometry("600x760")
+        self.root.minsize(600, 600)  # шапка-картинка рассчитана на 600 px
         try:
             if sys.platform == "win32":
                 self.root.iconbitmap(resource("icon.ico"))
         except tk.TclError:
             pass
+        # Узкий шрифт заголовков (Bahnschrift Condensed в Windows 10/11)
+        global TK_TITLE
+        self.display = theme.display_family(self.root)
+        TK_TITLE = (self.display, 12, "bold", "italic")
         self.vars = {}
         self._save_job = None
         self._rebinding = None
@@ -192,10 +190,12 @@ class App:
 
     # ---------- строительные блоки ----------
     def _card(self, parent, title, subtitle=None):
-        card = ctk.CTkFrame(parent, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=12)
+        card = ctk.CTkFrame(parent, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=4)
         card.pack(fill="x", pady=(0, 10), padx=2)
-        tk.Label(card, text=title, font=TK_TITLE, fg=TEXT, bg=CARD).pack(
-            anchor="w", padx=16, pady=(12, 0 if subtitle else 6))
+        # Заголовок карточки — как плашки меню P3R: курсив капсом и циановая черта слева
+        tk.Frame(card, bg=HILITE, width=4).place(x=1, y=13, width=4, height=20)
+        tk.Label(card, text=title.upper(), font=TK_TITLE, fg=HILITE, bg=CARD).pack(
+            anchor="w", padx=16, pady=(10, 0 if subtitle else 6))
         if subtitle:
             tk.Label(card, text=subtitle, font=TK_SUB, fg=MUTED, bg=CARD).pack(anchor="w", padx=16, pady=(0, 6))
         body = tk.Frame(card, bg=CARD)
@@ -280,26 +280,22 @@ class App:
     # ---------- построение окна ----------
     def _build(self):
         root = self.root
-        header = ctk.CTkFrame(root, fg_color="transparent")
-        header.pack(fill="x", padx=18, pady=(16, 8))
-        title_box = ctk.CTkFrame(header, fg_color="transparent")
-        title_box.pack(side="left")
-        try:
-            from PIL import Image
-            self._logo = ctk.CTkImage(Image.open(resource("icon.png")), size=(30, 30))
-        except Exception:
-            self._logo = None
-        ctk.CTkLabel(title_box, text="  GPO Fishing Macro", image=self._logo, compound="left",
-                     font=(FONT, 22, "bold"), text_color=TEXT).pack(anchor="w")
-        self.status = ctk.CTkLabel(title_box, text="  ●  Stopped  ", font=(FONT, 12, "bold"), text_color="white",
-                                   fg_color=RED, corner_radius=10, height=24)
-        self.status.pack(anchor="w", pady=(6, 0))
-        self.start_btn = ctk.CTkButton(header, text="▶  Start", width=150, height=46, corner_radius=12,
-                                       font=(FONT, 16, "bold"), fg_color=GREEN, hover_color=GREEN_HOVER,
+        # Шапка — картинка, нарисованная один раз (theme.render_banner), поверх неё статус и Start
+        banner = theme.render_banner(600, 110)
+        self._banner = ctk.CTkImage(banner, size=(600, 110))
+        header = ctk.CTkLabel(root, text="", image=self._banner, fg_color=BG, height=110)
+        header.pack(fill="x", pady=(0, 8))
+        self.status = ctk.CTkLabel(header, text="  ●  STOPPED  ", font=(self.display, 13, "bold", "italic"),
+                                   text_color="white", fg_color=RED, corner_radius=0, height=22)
+        self.status.place(x=22, y=70)
+        self.start_btn = ctk.CTkButton(header, text="▶  START", width=150, height=48, corner_radius=0,
+                                       font=(self.display, 20, "bold", "italic"), fg_color=GREEN,
+                                       hover_color=GREEN_HOVER, border_width=2, border_color=HILITE,
                                        command=self.engine.toggle)
-        self.start_btn.pack(side="right")
-        self.start_hint = ctk.CTkLabel(header, text="", font=(FONT, 11), text_color=MUTED)
-        self.start_hint.pack(side="right", padx=10)
+        self.start_btn.place(relx=1, x=-20, y=26, anchor="ne")
+        self.start_hint = ctk.CTkLabel(header, text="", font=(FONT, 11, "bold"), text_color=HILITE,
+                                       fg_color="#0b3478", corner_radius=0, height=18)
+        self.start_hint.place(relx=1, x=-20, y=78, anchor="ne")
 
         stats = ctk.CTkFrame(root, fg_color="transparent")
         stats.pack(fill="x", padx=16, pady=(0, 8))
@@ -307,17 +303,21 @@ class App:
         for i, (key, title) in enumerate((("catches", "Catches"), ("casts", "Casts"), ("runtime", "Runtime"),
                                           ("rate", "Fish / hour"))):
             stats.columnconfigure(i, weight=1, uniform="stats")
-            card = ctk.CTkFrame(stats, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=12)
+            card = ctk.CTkFrame(stats, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=4)
             card.grid(row=0, column=i, sticky="ew", padx=3)
-            value = ctk.CTkLabel(card, text="0", font=(FONT, 20, "bold"), text_color=TEXT)
+            tk.Frame(card, bg=HILITE, height=3).place(x=1, y=1, relwidth=0.35, height=3)
+            value = ctk.CTkLabel(card, text="0", font=(self.display, 26, "bold", "italic"), text_color=TEXT)
             value.pack(pady=(8, 0))
-            ctk.CTkLabel(card, text=title, font=(FONT, 11), text_color=MUTED).pack(pady=(0, 8))
+            ctk.CTkLabel(card, text=title.upper(), font=(self.display, 11, "italic"),
+                         text_color=HILITE).pack(pady=(0, 8))
             self.stat_values[key] = value
 
         tabs = ctk.CTkTabview(root, fg_color=BG, segmented_button_fg_color=CARD,
                               segmented_button_selected_color=ACCENT,
                               segmented_button_selected_hover_color=ACCENT_HOVER,
-                              segmented_button_unselected_color=CARD, corner_radius=12)
+                              segmented_button_unselected_color=CARD,
+                              segmented_button_unselected_hover_color=FIELD, corner_radius=4)
+        tabs._segmented_button.configure(font=(self.display, 13, "bold", "italic"), corner_radius=2)
         tabs.pack(fill="both", expand=True, padx=14, pady=(0, 14))
         for title, builder in (("General", self._tab_general), ("Casting", self._tab_casting),
                                ("Fishing", self._tab_fishing), ("Pre-Cast", self._tab_precast),
@@ -336,7 +336,7 @@ class App:
             self._label(hk, row, label)
             right = tk.Frame(hk, bg=CARD)
             right.grid(row=row, column=1, sticky="e", pady=4)
-            cap = ctk.CTkLabel(right, text=self.cfg[key].upper(), width=56, height=30, corner_radius=8,
+            cap = ctk.CTkLabel(right, text=self.cfg[key].upper(), width=56, height=30, corner_radius=2,
                                fg_color=FIELD, text_color=ACCENT, font=(FONT, 13, "bold"))
             cap.pack(side="left", padx=(0, 8))
             ctk.CTkButton(right, text="Rebind", width=80, height=30, fg_color="transparent", border_width=1,
@@ -420,7 +420,7 @@ class App:
 
     # --- Literally Everything Else ---
     def _tab_else(self, tab):
-        warn = ctk.CTkFrame(tab, fg_color="#3d1d1d", border_color=RED, border_width=1, corner_radius=10)
+        warn = ctk.CTkFrame(tab, fg_color=WARN_BG, border_color=RED, border_width=1, corner_radius=2)
         warn.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(warn, text="⚠  DON'T CHANGE IF YOU DON'T KNOW WHAT YOU'RE DOING",
                      font=(FONT, 13, "bold"), text_color="#ff7b72").pack(padx=12, pady=8)
@@ -651,7 +651,7 @@ class App:
         self.hotkey_labels[key].configure(text="...", text_color=ORANGE)
 
     def _refresh_hotkey_hint(self):
-        self.start_hint.configure(text=f"or press {self.cfg['hotkey_start_stop'].upper()}")
+        self.start_hint.configure(text=f"  OR PRESS {self.cfg['hotkey_start_stop'].upper()}  ")
 
     def log_threadsafe(self, text):
         self.events.put(("log", text))
@@ -827,7 +827,7 @@ class App:
                     text, color = payload
                     self._status_text = text
                     self.remote.poke()
-                    self.status.configure(text=f"  ●  {text}  ", fg_color=STATUS_COLORS.get(color, color))
+                    self.status.configure(text=f"  ●  {text.upper()}  ", fg_color=STATUS_COLORS.get(color, color))
                 elif kind == "stats":
                     self._stats = payload
                     self.remote.poke()
@@ -850,12 +850,12 @@ class App:
             return
         was_running, self._was_running = self._was_running, running
         if running:
-            self.start_btn.configure(text="■  Stop", fg_color=RED, hover_color=RED_HOVER)
+            self.start_btn.configure(text="■  STOP", fg_color=RED, hover_color=RED_HOVER)
             if self.cfg.get("blackout_enabled") and not self.blackout.active:
                 delay = max(float(self.cfg.get("blackout_delay") or 0), 0)
                 self._blackout_job = self.root.after(int(delay * 1000), self._blackout_on)
         else:
-            self.start_btn.configure(text="▶  Start", fg_color=GREEN, hover_color=GREEN_HOVER)
+            self.start_btn.configure(text="▶  START", fg_color=GREEN, hover_color=GREEN_HOVER)
             if was_running:
                 # Макрос остановился (вручную или по тревоге) — экран обратно, чтобы было видно, что случилось
                 self._blackout_off()

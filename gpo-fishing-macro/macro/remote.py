@@ -12,7 +12,7 @@ import time
 import urllib.parse
 import urllib.request
 
-COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status"}
+COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches"}
 STATUS_EVERY = 30.0     # даже без изменений — «я жив» раз в 30 с
 MIN_INTERVAL = 6.0      # не чаще раза в 6 с (лимиты ntfy.sh)
 COMMAND_MAX_AGE = 60    # команды старше минуты (пришли, пока ПК был выключен) игнорируем

@@ -11,6 +11,7 @@ import customtkinter as ctk
 
 from . import alarm, config, screen
 from .blackout import Blackout
+from .catches import CatchLog
 from .engine import MacroEngine
 from .overlay import AreaSelector, PointPicker
 from .remote import Remote, webapp_link
@@ -147,7 +148,9 @@ class App:
             log=lambda text: self.events.put(("log", text)),
             on_status=lambda text, color: self.events.put(("status", (text, color))),
             on_stats=lambda stats: self.events.put(("stats", stats)),
+            on_catch=self._on_catch,
         )
+        self.catch_log = CatchLog(self.log_threadsafe)
 
         self.blackout = Blackout(self.root, self.log_threadsafe)
         self._blackout_job = None
@@ -381,6 +384,21 @@ class App:
         self._num(pd, "Kp (пропорциональный)", "kp", "Насколько сильно тянуть полосу к рыбе")
         self._num(pd, "Kd (дифференциальный)", "kd", "Гашение: увеличьте, если полоса проскакивает рыбу")
         self._num(pd, "Ограничение PD", "pd_clamp", "Предел выхода регулятора")
+        cl = self._card(page, "Журнал улова", "Список пойманной рыбы с иконками — кнопка «🐟 Улов» в Telegram")
+        self._switch(cl, "Вести журнал улова", "catch_log_enabled",
+                     "После каждой мини-игры снимает уведомление о рыбе и читает название (Windows OCR)")
+        row = self._row(cl)
+        self._label(cl, row, "Область уведомления", "Где игра пишет, какая рыба поймана (иконка + название)")
+        self.catch_area_label = tk.Label(cl, text=self._catch_area_text(), font=TK_LABEL, bg=CARD,
+                                         fg=GREEN if self.cfg["catch_area"] else MUTED)
+        self.catch_area_label.grid(row=row, column=1, sticky="e", pady=4)
+        self._num(cl, "Снимок через", "catch_capture_delay",
+                  "Сколько ждать после конца мини-игры, пока появится уведомление", unit="с")
+        self._switch(cl, "Сообщать о каждой рыбе", "catch_notify_each", "Присылать в Telegram каждую поимку")
+        self._buttons(cl, ("Выбрать область", self._pick_catch_area, ACCENT, ACCENT_HOVER),
+                      ("Проверить сейчас", self._test_catch, FIELD, CARD_BORDER))
+        self._buttons(cl, ("Отправить улов", self._send_catches, FIELD, CARD_BORDER),
+                      ("Очистить", self._clear_catches, FIELD, CARD_BORDER))
         tm = self._card(page, "Тайминги")
         self._num(tm, "Пауза после рыбы", "fish_end_delay", "Ожидание после конца мини-игры", unit="s")
 
@@ -677,6 +695,63 @@ class App:
             if notify:
                 self.tg.send("🔆 Экран включён", buttons=False)
 
+    # ---------- журнал улова ----------
+    def _catch_area_text(self):
+        a = self.cfg.get("catch_area")
+        return f"{a[2]}×{a[3]} в X {a[0]}, Y {a[1]}" if a else "Не задана"
+
+    def _pick_catch_area(self):
+        def done(area):
+            self.cfg["catch_area"] = area
+            self.catch_area_label.configure(text=self._catch_area_text(), fg=GREEN)
+            self._save()
+            self.log(f"Область уведомления о рыбе: {area}")
+        self._open_overlay(lambda: AreaSelector(self.root, self.cfg.get("catch_area"), done))
+
+    def _on_catch(self, rgb):
+        """Из потока макроса: распознаём в отдельном потоке, чтобы не тормозить рыбалку."""
+        def job():
+            catch = self.catch_log.add(rgb)
+            self.log_threadsafe(f"Поймано: {catch.name} (×{catch.count})")
+            self.remote.poke()
+            if self.cfg.get("catch_notify_each"):
+                import io
+                from PIL import Image
+                buf = io.BytesIO()
+                Image.fromarray(rgb).save(buf, "PNG")
+                self.tg.send_photo(buf.getvalue(), f"🐟 {catch.name} × {catch.count} · всего {self.catch_log.total}")
+        threading.Thread(target=job, daemon=True).start()
+
+    def _test_catch(self):
+        area = self.cfg.get("catch_area")
+        if not area:
+            self.log("Сначала выберите область уведомления")
+            return
+
+        def job():
+            from . import ocr
+            from .catches import clean_name
+            rgb = screen.grab(area)
+            text = ocr.read_text(rgb)
+            if not ocr.available():
+                self.log_threadsafe("Windows OCR недоступен — рыба будет группироваться по иконке")
+            self.log_threadsafe(f"Распознано: «{text.strip()}» → название: «{clean_name(text) or 'не найдено'}»")
+        threading.Thread(target=job, daemon=True).start()
+
+    def _send_catches(self):
+        if not self.tg._creds()[0]:
+            self.log("Telegram не настроен — заполните токен и chat id на вкладке «Будильник»")
+            return
+        log = self.catch_log
+
+        def job():
+            self.tg.send_photo(log.render_png(), log.summary_text()[:1000])
+        threading.Thread(target=job, daemon=True).start()
+
+    def _clear_catches(self):
+        self.catch_log.reset()
+        self.log("Журнал улова очищен")
+
     def _webapp_link(self):
         if not (self.cfg.get("remote_enabled") and str(self.cfg.get("webapp_url") or "").startswith("https://")):
             return None
@@ -697,6 +772,7 @@ class App:
             "runtime": runtime // 10 * 10,  # с точностью до 10 с, чтобы не слать статус каждую секунду
             "blackout": self.blackout.active,
             "alarm": alarms.reason if alarms.active else None,
+            "fish": self.catch_log.status(),
         }
 
     def _new_secret(self):
@@ -714,6 +790,13 @@ class App:
             return
         if cmd == "alarm_off":
             self.engine.alarms.acknowledge()
+            return
+        if cmd == "catches":
+            self._send_catches()
+            return
+        if cmd == "reset_catches":
+            self.catch_log.reset()
+            self.tg.send("🐟 Журнал улова очищен", buttons=False)
             return
         if cmd == "panel":
             if self._webapp_link():

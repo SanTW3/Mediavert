@@ -17,10 +17,12 @@ BUTTONS = [
      {"text": "🌑 Выключить экран", "callback_data": "screen_off"}],
     [{"text": "📸 Скриншот", "callback_data": "shot"},
      {"text": "📊 Статус", "callback_data": "status"}],
-    [{"text": "⏹ Остановить макрос", "callback_data": "stop"}],
+    [{"text": "🐟 Улов", "callback_data": "catches"},
+     {"text": "⏹ Остановить макрос", "callback_data": "stop"}],
 ]
 COMMANDS = {"/menu": "menu", "/start": "menu", "/panel": "panel", "/screen_on": "screen_on", "/screen_off": "screen_off",
-            "/shot": "shot", "/status": "status", "/stop": "stop"}
+            "/shot": "shot", "/status": "status", "/stop": "stop", "/catches": "catches",
+            "/reset_catches": "reset_catches"}
 
 
 API = "https://api.telegram.org"

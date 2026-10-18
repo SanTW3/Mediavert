@@ -76,6 +76,12 @@ DEFAULTS = {
     "progress_color": [173, 254, 128],
     "require_progress": True,
 
+    # Журнал улова: снимок уведомления о рыбе после мини-игры + Windows OCR
+    "catch_log_enabled": False,
+    "catch_area": None,
+    "catch_capture_delay": 1.0,
+    "catch_notify_each": False,
+
     # Чёрный экран во время рыбалки
     "blackout_enabled": False,
     "blackout_all_monitors": True,

@@ -351,3 +351,51 @@ def test_remote_publishes_status_and_takes_commands():
     assert got == ["screen_on"]
     link = remote.webapp_link(dict(cfg, webapp_url="https://santw3.github.io/gpo-macro/"))
     assert link.startswith("https://santw3.github.io/gpo-macro/#t=S3CRET&s=http")
+
+
+def test_clean_name():
+    from macro.catches import clean_name
+    assert clean_name("You caught a Golden Carp! x1") == "Golden Carp"
+    assert clean_name("+1 Salmon") == "Salmon"
+    assert clean_name("   ") == ""
+
+
+def test_catch_log_groups_and_renders():
+    from macro.catches import UNKNOWN, CatchLog
+    log = CatchLog(log=lambda t: None)
+    a = np.zeros((40, 160, 3), np.uint8)
+    a[:, :40] = (255, 200, 0)                     # «иконка» одной рыбы
+    b = np.zeros((40, 160, 3), np.uint8)
+    b[10:30, 60:150] = (0, 120, 255)              # совсем другая картинка
+    log.add(a, text="You caught a Salmon!")
+    log.add(a, text="You caught a Salmon!")
+    log.add(a, text="")                           # OCR не прочитал — группа по картинке
+    log.add(a, text="")
+    log.add(b, text="")
+    names = {c.name: c.count for c in log.items}
+    assert names["Salmon"] == 2
+    unknown = [c.count for c in log.items if c.name == UNKNOWN]
+    assert sorted(unknown) == [1, 2]
+    assert log.total == 5
+    assert "Salmon × 2" in log.summary_text()
+    png = log.render_png()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert log.status()[0]["count"] == 2
+
+
+def test_windows_ocr_reads_text():
+    """Настоящее распознавание — только на Windows (в CI на windows-latest)."""
+    import pytest
+    if sys.platform != "win32":
+        pytest.skip("Windows OCR есть только на Windows")
+    from PIL import ImageDraw, ImageFont
+    from macro import ocr
+    from macro.catches import clean_name
+    if not ocr.available():
+        pytest.skip("на этой Windows нет движка OCR")
+    img = Image.new("RGB", (420, 60), (20, 30, 60))
+    font = ImageFont.truetype("arialbd.ttf", 32)
+    ImageDraw.Draw(img).text((10, 10), "You caught a Golden Carp!", font=font, fill=(255, 255, 255))
+    text = ocr.read_text(np.asarray(img))
+    print("OCR:", repr(text))
+    assert clean_name(text) == "Golden Carp"

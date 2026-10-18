@@ -3,3 +3,11 @@ numpy>=1.24
 pillow>=10.0
 pynput>=1.7
 customtkinter==5.2.2
+# Windows OCR для журнала улова (только на Windows)
+winrt-runtime>=2.0,<4; sys_platform == "win32"
+winrt-Windows.Foundation>=2.0,<4; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=2.0,<4; sys_platform == "win32"
+winrt-Windows.Globalization>=2.0,<4; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging>=2.0,<4; sys_platform == "win32"
+winrt-Windows.Media.Ocr>=2.0,<4; sys_platform == "win32"
+winrt-Windows.Storage.Streams>=2.0,<4; sys_platform == "win32"

@@ -52,9 +52,10 @@ class AlarmManager:
 
 
 class MacroEngine:
-    def __init__(self, cfg, log=print, on_status=None, on_stats=None):
+    def __init__(self, cfg, log=print, on_status=None, on_stats=None, on_catch=None):
         self.cfg = cfg
         self.log = log
+        self.on_catch = on_catch  # (rgb снимка области уведомления) -> None, вызывается из потока макроса
         self.on_status = on_status or (lambda text, color: None)
         self.on_stats = on_stats or (lambda stats: None)
         self.alarms = AlarmManager(cfg, log)
@@ -231,7 +232,7 @@ class MacroEngine:
                     self.log(f"Мини-игра найдена: полоса {det.zone_top}-{det.zone_bottom}, "
                              f"трек {det.bar_top}-{det.bar_bottom}, колонки {det.bar_x0}-{det.bar_x1}")
                 self._play_minigame()
-                self._sleep(float(self.cfg["fish_end_delay"]))
+                self._after_minigame()
                 self.stats["catches"] += 1
                 self.watchdog.on_catch()
                 self._emit_stats()
@@ -338,6 +339,22 @@ class MacroEngine:
         finally:
             self._in_minigame = False
             self._set_mouse(False)
+
+    def _after_minigame(self):
+        """Пауза Fish End Delay; посреди неё — снимок уведомления о пойманной рыбе."""
+        cfg = self.cfg
+        end_delay = float(cfg["fish_end_delay"])
+        area = cfg.get("catch_area")
+        if not (cfg.get("catch_log_enabled") and area and self.on_catch):
+            self._sleep(end_delay)
+            return
+        capture = max(float(cfg["catch_capture_delay"]), 0.0)
+        self._sleep(capture)
+        try:
+            self.on_catch(screen.grab(area))
+        except Exception as exc:
+            self.log(f"Не удалось снять уведомление о рыбе: {exc}")
+        self._sleep(max(end_delay - capture, 0.0))
 
     def _post_catch(self):
         cfg = self.cfg

@@ -1,0 +1,445 @@
+"""Окно управления макросом (tkinter) — по образцу «GPO Fishing Macro Controls»."""
+import queue
+import threading
+import time
+import tkinter as tk
+from tkinter import ttk
+
+from . import alarm, config, screen
+from .engine import MacroEngine
+from .overlay import AreaSelector, PointPicker
+
+try:
+    from pynput import keyboard
+except ImportError:  # без pynput горячие клавиши не работают, но окно открывается
+    keyboard = None
+
+DIGITS = [str(d) for d in range(10)]
+
+
+def key_name(key):
+    """pynput-клавиша → строка вида 'f1', 'a', '7'."""
+    if keyboard is None:
+        return None
+    if isinstance(key, keyboard.Key):
+        return key.name
+    if getattr(key, "char", None):
+        return key.char.lower()
+    vk = getattr(key, "vk", None)
+    if vk is not None and 0x30 <= vk <= 0x5A:
+        return chr(vk).lower()
+    return None
+
+
+def fmt_point(p):
+    return f"X: {p[0]}, Y: {p[1]}" if p else "Not set"
+
+
+class App:
+    def __init__(self):
+        self.cfg = config.load()
+        self.events = queue.Queue()
+        self.root = tk.Tk()
+        self.root.title("GPO Fishing Macro")
+        self.root.geometry("520x560")
+        self.root.minsize(480, 500)
+        self.vars = {}
+        self._save_job = None
+        self._rebinding = None
+        self._preview = None
+
+        self.engine = MacroEngine(
+            self.cfg,
+            log=lambda text: self.events.put(("log", text)),
+            on_status=lambda text, color: self.events.put(("status", (text, color))),
+            on_stats=lambda stats: self.events.put(("stats", stats)),
+        )
+
+        self._build()
+        self._apply_topmost()
+        self._start_hotkeys()
+        self.root.protocol("WM_DELETE_WINDOW", self.exit)
+        self.root.after(50, self._poll)
+
+    # ---------- переменные, связанные с конфигом ----------
+    def var(self, key, kind=float):
+        if key in self.vars:
+            return self.vars[key]
+        value = self.cfg[key]
+        if kind is bool:
+            v = tk.BooleanVar(value=bool(value))
+        else:
+            v = tk.StringVar(value=str(value))
+
+        def changed(*_):
+            try:
+                raw = v.get()
+                self.cfg[key] = raw if kind is bool else kind(raw)
+            except (ValueError, tk.TclError):
+                return
+            self._schedule_save()
+
+        v.trace_add("write", changed)
+        self.vars[key] = v
+        return v
+
+    def _schedule_save(self):
+        if self._save_job:
+            self.root.after_cancel(self._save_job)
+        self._save_job = self.root.after(500, self._save)
+
+    def _save(self):
+        self._save_job = None
+        try:
+            config.save(self.cfg)
+        except OSError as exc:
+            self.log(f"Не удалось сохранить настройки: {exc}")
+
+    # ---------- построение окна ----------
+    def _build(self):
+        root = self.root
+        ttk.Label(root, text="GPO Fishing Macro Controls", font=("Segoe UI", 15, "bold")).pack(pady=(14, 4))
+        self.status = tk.Label(root, text="Status: Stopped", fg="red", font=("Segoe UI", 10))
+        self.status.pack(pady=(0, 8))
+
+        nb = ttk.Notebook(root)
+        nb.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        for title, builder in (("General", self._tab_general), ("Casting", self._tab_casting),
+                               ("Fishing", self._tab_fishing), ("Pre-Cast", self._tab_precast),
+                               ("Literally Everything Else", self._tab_else)):
+            frame = ttk.Frame(nb, padding=6)
+            nb.add(frame, text=title)
+            builder(frame)
+
+    def _spin(self, parent, row, label, key, frm, to, inc, kind=float, unit=None):
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(10, 20), pady=3)
+        ttk.Spinbox(parent, from_=frm, to=to, increment=inc, width=9,
+                    textvariable=self.var(key, kind)).grid(row=row, column=1, sticky="w")
+        if unit:
+            ttk.Label(parent, text=unit).grid(row=row, column=2, sticky="w", padx=6)
+
+    def _entry(self, parent, row, label, key, width=30, show=None):
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(10, 10), pady=3)
+        ttk.Entry(parent, width=width, show=show, textvariable=self.var(key, str)).grid(
+            row=row, column=1, columnspan=2, sticky="w")
+
+    def _point_row(self, parent, row, button, key, hint):
+        lbl = tk.Label(parent, text=fmt_point(self.cfg.get(key)),
+                       fg="green" if self.cfg.get(key) else "gray")
+
+        def pick():
+            def done(point):
+                self.cfg[key] = point
+                lbl.config(text=fmt_point(point), fg="green")
+                self._save()
+            PointPicker(self.root, hint, done)
+
+        ttk.Button(parent, text=button, width=18, command=pick).grid(
+            row=row, column=0, sticky="w", padx=(10, 10), pady=3)
+        lbl.grid(row=row, column=1, columnspan=2, sticky="w")
+
+    # --- General ---
+    def _tab_general(self, tab):
+        hk = ttk.LabelFrame(tab, text="Hotkeys", padding=8)
+        hk.pack(fill="x", pady=(0, 10))
+        self.hotkey_labels = {}
+        for row, (label, key) in enumerate((("Start/Stop:", "hotkey_start_stop"),
+                                            ("Change Area:", "hotkey_change_area"),
+                                            ("Exit:", "hotkey_exit"))):
+            ttk.Label(hk, text=label).grid(row=row, column=0, sticky="w", padx=(10, 30), pady=4)
+            lbl = tk.Label(hk, text=self.cfg[key].upper(), fg="blue", font=("Segoe UI", 10, "bold"), width=8,
+                           anchor="w")
+            lbl.grid(row=row, column=1, sticky="w")
+            self.hotkey_labels[key] = lbl
+            ttk.Button(hk, text="Rebind", command=lambda k=key: self._rebind(k)).grid(row=row, column=2, padx=10)
+
+        ttk.Separator(tab).pack(fill="x", pady=6)
+        ttk.Checkbutton(tab, text="Always on Top", variable=self.var("always_on_top", bool),
+                        command=self._apply_topmost).pack(pady=6)
+
+        nh = ttk.LabelFrame(tab, text="Number Hotkeys", padding=8)
+        nh.pack(fill="x", pady=6)
+        for row, (label, key) in enumerate((("Rod Hotkey:", "rod_hotkey"),
+                                            ("Anything Else Hotkey:", "other_hotkey"))):
+            ttk.Label(nh, text=label).grid(row=row, column=0, sticky="w", padx=(10, 30), pady=4)
+            ttk.Combobox(nh, values=DIGITS, width=9, state="readonly",
+                         textvariable=self.var(key, str)).grid(row=row, column=1, sticky="w")
+
+    # --- Casting ---
+    def _tab_casting(self, tab):
+        wp = ttk.LabelFrame(tab, text="Water Point", padding=8)
+        wp.pack(fill="x", pady=(0, 10))
+        self._point_row(wp, 0, "Set Water Point", "water_point", "Кликните по воде, куда забрасывать удочку")
+
+        ct = ttk.LabelFrame(tab, text="Cast Timing", padding=8)
+        ct.pack(fill="x")
+        self._spin(ct, 0, "Cast Hold Duration:", "cast_hold", 0.1, 10, 0.1, unit="s")
+        self._spin(ct, 1, "Recast Timeout:", "recast_timeout", 3, 300, 1, unit="s")
+
+    # --- Fishing ---
+    def _tab_fishing(self, tab):
+        pd = ttk.LabelFrame(tab, text="PD Control Parameters", padding=8)
+        pd.pack(fill="x", pady=(0, 10))
+        self._spin(pd, 0, "Kp (Proportional):", "kp", 0, 20, 0.1)
+        self._spin(pd, 1, "Kd (Derivative):", "kd", 0, 20, 0.05)
+        self._spin(pd, 2, "PD Clamp:", "pd_clamp", 0.1, 10, 0.1)
+
+        tm = ttk.LabelFrame(tab, text="Timing", padding=8)
+        tm.pack(fill="x")
+        self._spin(tm, 0, "Fish End Delay:", "fish_end_delay", 0, 30, 0.5, unit="s")
+
+    # --- Pre-Cast ---
+    def _tab_precast(self, tab):
+        def section(flag_key, title, build):
+            ttk.Checkbutton(tab, text=title, variable=self.var(flag_key, bool)).pack(anchor="w", pady=(4, 2))
+            frame = ttk.LabelFrame(tab, text=f"{title} Settings", padding=8)
+            build(frame)
+
+            def toggle(*_):
+                if self.vars[flag_key].get():
+                    frame.pack(fill="x", pady=(0, 6), after=check_widgets[flag_key])
+                else:
+                    frame.pack_forget()
+            check_widgets[flag_key] = tab.pack_slaves()[-1]
+            self.vars[flag_key].trace_add("write", toggle)
+            toggle()
+
+        check_widgets = {}
+
+        def buy(f):
+            self._point_row(f, 0, "Set Left Point", "buy_left", "Кликните по левой кнопке покупки")
+            self._point_row(f, 1, "Set Middle Point", "buy_middle", "Кликните по средней кнопке/полю")
+            self._point_row(f, 2, "Set Right Point", "buy_right", "Кликните по правой кнопке покупки")
+            self._spin(f, 3, "Loops Per Purchase:", "loops_per_purchase", 1, 10000, 1, kind=int)
+            ttk.Checkbutton(f, text="Type amount into Middle Point",
+                            variable=self.var("buy_type_amount", bool)).grid(row=4, column=0, columnspan=3,
+                                                                             sticky="w", padx=10)
+
+        def fruit(f):
+            ttk.Label(f, text="Fruit Hotkey:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=3)
+            ttk.Combobox(f, values=DIGITS, width=9, state="readonly",
+                         textvariable=self.var("fruit_hotkey", str)).grid(row=0, column=1, sticky="w")
+            self._point_row(f, 1, "Set Store Point", "store_point", "Кликните по кнопке Store")
+
+        def bait(f):
+            self._point_row(f, 0, "Set Bait Point", "bait_point", "Кликните по верхней наживке в списке")
+
+        section("auto_buy_bait", "Auto Buy Common Bait", buy)
+        section("auto_store_fruit", "Auto Store Devil Fruit", fruit)
+        section("auto_select_bait", "Auto Select Top Bait", bait)
+
+    # --- Literally Everything Else ---
+    def _tab_else(self, tab):
+        canvas = tk.Canvas(tab, highlightthickness=0)
+        sb = ttk.Scrollbar(tab, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas)
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+
+        # Будильник
+        al = ttk.LabelFrame(inner, text="Phone Alarm", padding=8)
+        al.pack(fill="x", pady=(0, 8))
+        ttk.Checkbutton(al, text="Ring my phone if something goes wrong",
+                        variable=self.var("alarm_enabled", bool)).grid(row=0, column=0, columnspan=3, sticky="w")
+        self._entry(al, 1, "ntfy server:", "ntfy_server")
+        self._entry(al, 2, "ntfy topic:", "ntfy_topic")
+        self._entry(al, 3, "Telegram bot token:", "telegram_token", show="•")
+        self._entry(al, 4, "Telegram chat id:", "telegram_chat_id")
+        self._entry(al, 5, "Pushover user key:", "pushover_user", show="•")
+        self._entry(al, 6, "Pushover app token:", "pushover_token", show="•")
+        self._spin(al, 7, "Repeat alarm every:", "alarm_repeat_sec", 0, 3600, 10, unit="s (0 = once)")
+        ttk.Checkbutton(al, text="Attach screenshot (Telegram)",
+                        variable=self.var("alarm_screenshot", bool)).grid(row=8, column=0, columnspan=3, sticky="w")
+        btns = ttk.Frame(al)
+        btns.grid(row=9, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Button(btns, text="Test Alarm", command=self._test_alarm).pack(side="left", padx=(10, 6))
+        ttk.Button(btns, text="Stop Alarm", command=self.engine.alarms.acknowledge).pack(side="left")
+
+        # Сторож
+        wd = ttk.LabelFrame(inner, text="Watchdog (when to ring)", padding=8)
+        wd.pack(fill="x", pady=(0, 8))
+        self._spin(wd, 0, "Failed casts in a row (0 = off):", "wd_failed_casts", 0, 100, 1, kind=int)
+        self._spin(wd, 1, "No fish caught for (0 = off):", "wd_no_catch_min", 0, 600, 1, unit="min")
+        ttk.Checkbutton(wd, text="Roblox window closed / not focused for",
+                        variable=self.var("wd_check_window", bool)).grid(row=2, column=0, sticky="w", padx=(6, 0))
+        ttk.Spinbox(wd, from_=5, to=600, increment=5, width=9,
+                    textvariable=self.var("wd_window_grace_sec")).grid(row=2, column=1, sticky="w")
+        ttk.Label(wd, text="s").grid(row=2, column=2, sticky="w", padx=6)
+        ttk.Checkbutton(wd, text="Stop macro on alarm",
+                        variable=self.var("wd_stop_on_alarm", bool)).grid(row=3, column=0, columnspan=3,
+                                                                          sticky="w", padx=(6, 0))
+
+        # Распознавание
+        dt = ttk.LabelFrame(inner, text="Detection", padding=8)
+        dt.pack(fill="x", pady=(0, 8))
+        ttk.Label(dt, text="Zone color:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=3)
+        self.color_swatch = tk.Label(dt, width=10, relief="solid", bd=1)
+        self.color_swatch.grid(row=0, column=1, sticky="w")
+        ttk.Button(dt, text="Pick from screen", command=self._pick_color).grid(row=0, column=2, padx=6)
+        self._update_swatch()
+        self._spin(dt, 1, "Color tolerance:", "zone_tolerance", 0, 255, 5, kind=int)
+        self._spin(dt, 2, "Fish line brightness:", "fish_white_min", 0, 255, 5, kind=int)
+        self._spin(dt, 3, "Min zone pixels:", "min_zone_pixels", 1, 10000, 5, kind=int)
+        self._spin(dt, 4, "Scan rate:", "scan_fps", 5, 240, 5, kind=int, unit="FPS")
+        self._spin(dt, 5, "Click delay:", "click_delay", 0.05, 5, 0.05, unit="s")
+        area_row = ttk.Frame(dt)
+        area_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Button(area_row, text="Change Area", command=self.change_area).pack(side="left", padx=(10, 6))
+        ttk.Button(area_row, text="Debug Preview", command=self._open_preview).pack(side="left")
+        self.area_label = tk.Label(dt, text=self._area_text(), fg="green" if self.cfg["area"] else "gray")
+        self.area_label.grid(row=7, column=0, columnspan=3, sticky="w", padx=10)
+
+        # Статистика и лог
+        st = ttk.LabelFrame(inner, text="Stats & Log", padding=8)
+        st.pack(fill="both", expand=True)
+        self.stats_label = ttk.Label(st, text="Casts: 0   Catches: 0   Runtime: 0:00:00")
+        self.stats_label.pack(anchor="w")
+        self.log_box = tk.Text(st, height=8, wrap="word", state="disabled", font=("Consolas", 9))
+        self.log_box.pack(fill="both", expand=True, pady=(4, 0))
+        self._stats = {}
+
+    # ---------- действия ----------
+    def _apply_topmost(self):
+        self.root.attributes("-topmost", bool(self.cfg["always_on_top"]))
+
+    def _area_text(self):
+        a = self.cfg["area"]
+        return f"Area: X {a[0]}, Y {a[1]}, {a[2]}×{a[3]}" if a else "Area: not set (press F2)"
+
+    def change_area(self):
+        if self.engine.running:
+            self.log("Сначала остановите макрос")
+            return
+
+        def done(area):
+            self.cfg["area"] = area
+            self.area_label.config(text=self._area_text(), fg="green")
+            self._save()
+            self.log(f"Область мини-игры: {area}")
+        AreaSelector(self.root, self.cfg["area"], done)
+
+    def _pick_color(self):
+        def done(point):
+            def grab():
+                rgb = screen.grab((point[0], point[1], 1, 1))[0, 0]
+                self.cfg["zone_color"] = [int(c) for c in rgb]
+                self._update_swatch()
+                self._save()
+                self.log(f"Цвет зоны: {self.cfg['zone_color']}")
+            self.root.after(150, grab)  # ждём, пока оверлей исчезнет
+        PointPicker(self.root, "Кликните по синей зоне мини-игры", done)
+
+    def _update_swatch(self):
+        r, g, b = self.cfg["zone_color"]
+        self.color_swatch.config(bg=f"#{r:02x}{g:02x}{b:02x}", text=f"{r},{g},{b}",
+                                 fg="black" if r + g + b > 380 else "white")
+
+    def _test_alarm(self):
+        names = alarm.channels(self.cfg)
+        if not names:
+            self.log("Заполните хотя бы один канал: ntfy topic, Telegram или Pushover")
+            return
+        self.log("Отправляю тестовую тревогу: " + ", ".join(names))
+
+        def job():
+            try:
+                png = screen.screenshot_png() if self.cfg.get("alarm_screenshot") else None
+            except Exception:
+                png = None
+            alarm.send_alarm(self.cfg, "Тестовая тревога — всё работает", png,
+                             log=lambda t: self.events.put(("log", t)))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _open_preview(self):
+        if self._preview and self._preview.winfo_exists():
+            self._preview.lift()
+            return
+        from .preview import Preview
+        self._preview = Preview(self.root, self.cfg, self.engine)
+
+    def _rebind(self, key):
+        if keyboard is None:
+            self.log("pynput не установлен — горячие клавиши недоступны")
+            return
+        self._rebinding = key
+        self.hotkey_labels[key].config(text="...", fg="orange")
+
+    def log(self, text):
+        self.log_box.config(state="normal")
+        self.log_box.insert("end", time.strftime("[%H:%M:%S] ") + text + "\n")
+        self.log_box.see("end")
+        lines = int(self.log_box.index("end-1c").split(".")[0])
+        if lines > 500:
+            self.log_box.delete("1.0", f"{lines - 500}.0")
+        self.log_box.config(state="disabled")
+
+    def exit(self):
+        self.engine.stop()
+        self._save()
+        if getattr(self, "listener", None):
+            self.listener.stop()
+        self.root.destroy()
+
+    # ---------- горячие клавиши и события из потоков ----------
+    def _start_hotkeys(self):
+        self.listener = None
+        if keyboard is None:
+            self.log("pynput не установлен — горячие клавиши F1/F2/F3 не работают")
+            return
+        self.listener = keyboard.Listener(on_press=lambda k: self.events.put(("key", key_name(k))))
+        self.listener.daemon = True
+        self.listener.start()
+
+    def _on_key(self, name):
+        if not name:
+            return
+        if self._rebinding:
+            key, self._rebinding = self._rebinding, None
+            self.cfg[key] = name
+            self.hotkey_labels[key].config(text=name.upper(), fg="blue")
+            self._save()
+            return
+        if name == self.cfg["hotkey_start_stop"]:
+            self.engine.toggle()
+        elif name == self.cfg["hotkey_change_area"]:
+            self.change_area()
+        elif name == self.cfg["hotkey_exit"]:
+            self.exit()
+
+    def _poll(self):
+        try:
+            while True:
+                kind, payload = self.events.get_nowait()
+                if kind == "key":
+                    self._on_key(payload)
+                    if not self.root.winfo_exists():
+                        return
+                elif kind == "log":
+                    self.log(payload)
+                elif kind == "status":
+                    text, color = payload
+                    self.status.config(text=f"Status: {text}", fg=color)
+                elif kind == "stats":
+                    self._stats = payload
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return  # окно уже закрыто
+        self._refresh_stats()
+        self.root.after(50, self._poll)
+
+    def _refresh_stats(self):
+        s = self._stats
+        started = s.get("started")
+        runtime = int(time.time() - started) if started and self.engine.running else 0
+        h, rem = divmod(runtime, 3600)
+        self.stats_label.config(text=f"Casts: {s.get('casts', 0)}   Catches: {s.get('catches', 0)}   "
+                                     f"Runtime: {h}:{rem // 60:02d}:{rem % 60:02d}")
+
+    def run(self):
+        self.root.mainloop()

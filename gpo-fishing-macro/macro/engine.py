@@ -20,11 +20,13 @@ class AlarmManager:
         self.log = log
         self._event = threading.Event()
         self.active = False
+        self.reason = None
 
     def trigger(self, reason, with_screenshot=True):
         if self.active or not self.cfg.get("alarm_enabled"):
             return
         self.active = True
+        self.reason = reason
         self._event.clear()
         png = None
         if with_screenshot and self.cfg.get("alarm_screenshot"):

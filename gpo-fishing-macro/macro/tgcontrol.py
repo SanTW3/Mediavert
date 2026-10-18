@@ -19,7 +19,7 @@ BUTTONS = [
      {"text": "📊 Статус", "callback_data": "status"}],
     [{"text": "⏹ Остановить макрос", "callback_data": "stop"}],
 ]
-COMMANDS = {"/menu": "menu", "/start": "menu", "/screen_on": "screen_on", "/screen_off": "screen_off",
+COMMANDS = {"/menu": "menu", "/start": "menu", "/panel": "panel", "/screen_on": "screen_on", "/screen_off": "screen_off",
             "/shot": "shot", "/status": "status", "/stop": "stop"}
 
 
@@ -34,10 +34,12 @@ def _call(token, method, params=None, timeout=15):
 
 
 class TelegramControl:
-    def __init__(self, cfg, on_command, log):
+    def __init__(self, cfg, on_command, log, webapp_link=None):
         self.cfg = cfg
         self.on_command = on_command
         self.log = log
+        self.webapp_link = webapp_link  # функция → ссылка на мини-приложение или None
+        self._menu_link = None
         self._offset = None
         self._token = None
         self._stop = threading.Event()
@@ -64,11 +66,35 @@ class TelegramControl:
             return
         params = {"chat_id": chat, "text": text}
         if buttons:
-            params["reply_markup"] = json.dumps({"inline_keyboard": BUTTONS})
+            rows = list(BUTTONS)
+            link = self._link()
+            if link:
+                rows = [[{"text": "📱 Открыть панель", "web_app": {"url": link}}]] + rows
+            params["reply_markup"] = json.dumps({"inline_keyboard": rows})
         try:
             _call(token, "sendMessage", params)
         except Exception as exc:
             self.log(f"Telegram: не удалось отправить сообщение: {exc}")
+
+    def _link(self):
+        try:
+            return self.webapp_link() if self.webapp_link else None
+        except Exception:
+            return None
+
+    def refresh_menu_button(self):
+        """Сбросить кнопку «Панель» у поля ввода (например, после смены секретной ссылки)."""
+        self._menu_link = None
+
+    def _update_menu_button(self, token, chat):
+        """Постоянная кнопка «Панель» слева от поля ввода в чате с ботом."""
+        link = self._link()
+        if link == self._menu_link:
+            return
+        button = ({"type": "web_app", "text": "Панель", "web_app": {"url": link}} if link
+                  else {"type": "commands"})
+        _call(token, "setChatMenuButton", {"chat_id": chat, "menu_button": json.dumps(button)})
+        self._menu_link = link
 
     def send_photo(self, png, caption):
         token, chat = self._creds()
@@ -92,6 +118,8 @@ class TelegramControl:
                     results = old.get("result") or []
                     self._offset = results[-1]["update_id"] + 1 if results else None
                     self._token = token
+                    self._menu_link = None
+                self._update_menu_button(token, chat)
                 params = {"timeout": 25, "allowed_updates": json.dumps(["message", "callback_query"])}
                 if self._offset is not None:
                     params["offset"] = self._offset

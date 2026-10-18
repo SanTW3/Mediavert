@@ -305,3 +305,49 @@ def test_telegram_control_accepts_only_own_chat():
     tgcontrol.API = "https://api.telegram.org"
     assert got == ["screen_on", "shot"]  # команды из чужого чата 999 проигнорированы
     assert [m for m, _ in sent] == ["answerCallbackQuery"]
+
+
+def test_remote_publishes_status_and_takes_commands():
+    from macro import remote
+    posted, got = [], []
+    now = time.time()
+    stream = [
+        {"event": "open"},
+        {"event": "message", "time": now - 600, "message": "stop"},   # старая — игнор
+        {"event": "message", "time": now, "message": "rm -rf"},       # не команда — игнор
+        {"event": "message", "time": now, "message": "screen_on"},
+    ]
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            posted.append((self.path, json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
+            self.send_response(200)
+            self.end_headers()
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            for m in stream:
+                self.wfile.write((json.dumps(m) + "\n").encode())
+            self.wfile.flush()
+            time.sleep(1)
+
+        def log_message(self, *a):
+            pass
+
+    from http.server import ThreadingHTTPServer
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S3CRET")
+    r = remote.Remote(cfg, lambda: {"running": True, "catches": 3}, got.append, log=lambda t: None)
+    r.poke()
+    deadline = time.time() + 5
+    while (not posted or not got) and time.time() < deadline:
+        time.sleep(0.05)
+    r.stop()
+    srv.shutdown()
+    assert posted[0][0] == "/gpo-S3CRET-status"
+    assert posted[0][1]["catches"] == 3 and posted[0][1]["running"] is True and "ts" in posted[0][1]
+    assert got == ["screen_on"]
+    link = remote.webapp_link(dict(cfg, webapp_url="https://santw3.github.io/gpo-macro/"))
+    assert link.startswith("https://santw3.github.io/gpo-macro/#t=S3CRET&s=http")

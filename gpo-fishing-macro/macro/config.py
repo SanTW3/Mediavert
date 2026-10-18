@@ -82,6 +82,11 @@ DEFAULTS = {
     "blackout_delay": 3.0,
     "tg_control": True,
 
+    # Мини-приложение Telegram (страница на GitHub Pages, связь через ntfy)
+    "remote_enabled": True,
+    "remote_secret": "",
+    "webapp_url": "https://santw3.github.io/gpo-macro/",
+
     # Phone alarm
     "alarm_enabled": True,
     "ntfy_server": "https://ntfy.sh",
@@ -122,7 +127,15 @@ def load(path=CONFIG_PATH):
                 cfg[key] = value
     except (OSError, ValueError):
         pass
+    if not cfg["remote_secret"]:
+        cfg["remote_secret"] = new_secret()
     return cfg
+
+
+def new_secret():
+    """Секретная часть имени топиков ntfy: кто её знает, тот видит статус и управляет макросом."""
+    import secrets
+    return secrets.token_urlsafe(18)
 
 
 def save(cfg, path=CONFIG_PATH):

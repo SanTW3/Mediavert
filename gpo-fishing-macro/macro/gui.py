@@ -13,6 +13,7 @@ from . import alarm, config, screen
 from .blackout import Blackout
 from .engine import MacroEngine
 from .overlay import AreaSelector, PointPicker
+from .remote import Remote, webapp_link
 from .tgcontrol import TelegramControl, status_text
 
 try:
@@ -146,7 +147,11 @@ class App:
 
         self.blackout = Blackout(self.root, self.log_threadsafe)
         self._blackout_job = None
-        self.tg = TelegramControl(self.cfg, lambda cmd: self.events.put(("tg", cmd)), self.log_threadsafe)
+        self._status_text = "Stopped"
+        self.tg = TelegramControl(self.cfg, lambda cmd: self.events.put(("tg", cmd)), self.log_threadsafe,
+                                  webapp_link=self._webapp_link)
+        self.remote = Remote(self.cfg, self._remote_status, lambda cmd: self.events.put(("tg", cmd)),
+                             self.log_threadsafe)
 
         self._build()
         self._apply_topmost()
@@ -507,6 +512,13 @@ class App:
         self._switch(al, "Attach screenshot (Telegram)", "alarm_screenshot")
         self._switch(al, "Telegram control buttons", "tg_control",
                      "Bot buttons: screen on/off, screenshot, status, stop. Send /menu to the bot")
+
+        ma = self._card(page, "Telegram Mini App", "Live panel inside Telegram: stats, start/stop, screen, alarm")
+        self._switch(ma, "Enable Mini App", "remote_enabled",
+                     "Status and commands go through ntfy under a secret topic name")
+        self._text(ma, "Mini App URL", "webapp_url", "Page on GitHub Pages")
+        self._buttons(ma, ("Send panel to Telegram", lambda: self._on_tg("panel"), ACCENT, ACCENT_HOVER),
+                      ("New secret link", self._new_secret, FIELD, CARD_BORDER))
         self._buttons(al, ("Test Alarm", self._test_alarm, ACCENT, ACCENT_HOVER),
                       ("Stop Alarm", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
 
@@ -659,15 +671,57 @@ class App:
             if notify:
                 self.tg.send("🔆 Экран включён", buttons=False)
 
+    def _webapp_link(self):
+        if not (self.cfg.get("remote_enabled") and str(self.cfg.get("webapp_url") or "").startswith("https://")):
+            return None
+        return webapp_link(self.cfg)
+
+    def _remote_status(self):
+        """Снимок для мини-приложения (вызывается из фонового потока)."""
+        s = self.engine.stats
+        started = s.get("started")
+        running = self.engine.running
+        runtime = int(time.time() - started) if started and running else 0
+        alarms = self.engine.alarms
+        return {
+            "running": running,
+            "state": self._status_text,
+            "catches": s.get("catches", 0),
+            "casts": s.get("casts", 0),
+            "runtime": runtime // 10 * 10,  # с точностью до 10 с, чтобы не слать статус каждую секунду
+            "blackout": self.blackout.active,
+            "alarm": alarms.reason if alarms.active else None,
+        }
+
+    def _new_secret(self):
+        self.cfg["remote_secret"] = config.new_secret()
+        self._save()
+        self.tg.refresh_menu_button()
+        self.log("Новая секретная ссылка создана — старая панель больше не работает. "
+                 "Нажмите «Send panel to Telegram»")
+
     def _on_tg(self, cmd):
+        self.remote.poke()
+        if cmd == "start":
+            if not self.engine.running:
+                self.engine.start()
+            return
+        if cmd == "alarm_off":
+            self.engine.alarms.acknowledge()
+            return
+        if cmd == "panel":
+            if self._webapp_link():
+                self.tg.send("📱 Панель управления макросом — кнопка ниже или «Панель» слева от поля ввода")
+            else:
+                self.log("Мини-приложение выключено или не задан https-адрес")
+            return
         if cmd == "screen_on":
             self._blackout_off()
             self.tg.send("🔆 Экран включён")
         elif cmd == "screen_off":
             self._blackout_on()
         elif cmd == "stop":
-            self.engine.stop()
-            self.tg.send("⏹ Макрос остановлен")
+            self.engine.stop()  # сообщение «Макрос остановлен» пришлёт _refresh_running
         elif cmd == "shot":
             def job():
                 try:
@@ -693,6 +747,7 @@ class App:
         self.engine.stop()
         self._blackout_off()
         self.tg.stop()
+        self.remote.stop()
         self._save()
         if getattr(self, "listener", None):
             self.listener.stop()
@@ -770,9 +825,12 @@ class App:
                     self.log(payload)
                 elif kind == "status":
                     text, color = payload
+                    self._status_text = text
+                    self.remote.poke()
                     self.status.configure(text=f"  ●  {text}  ", fg_color=STATUS_COLORS.get(color, color))
                 elif kind == "stats":
                     self._stats = payload
+                    self.remote.poke()
                 elif kind == "click":
                     if self.blackout.active:
                         self._blackout_off(notify=True)

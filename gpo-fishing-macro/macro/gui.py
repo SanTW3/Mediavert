@@ -10,13 +10,20 @@ import tkinter as tk
 import customtkinter as ctk
 
 from . import alarm, config, screen
+from .blackout import Blackout
 from .engine import MacroEngine
 from .overlay import AreaSelector, PointPicker
+from .tgcontrol import TelegramControl, status_text
 
 try:
-    from pynput import keyboard
+    from pynput import keyboard, mouse
 except ImportError:  # без pynput горячие клавиши не работают, но окно открывается
-    keyboard = None
+    keyboard = mouse = None
+
+# Флаги «событие сгенерировано программой» в low-level хуках Windows:
+# так отличаем свои нажатия (SendInput макроса) от нажатий человека
+LLKHF_INJECTED = 0x10
+LLMHF_INJECTED = 0x01
 
 DIGITS = [str(d) for d in range(10)]
 
@@ -136,6 +143,10 @@ class App:
             on_status=lambda text, color: self.events.put(("status", (text, color))),
             on_stats=lambda stats: self.events.put(("stats", stats)),
         )
+
+        self.blackout = Blackout(self.root, self.log_threadsafe)
+        self._blackout_job = None
+        self.tg = TelegramControl(self.cfg, lambda cmd: self.events.put(("tg", cmd)), self.log_threadsafe)
 
         self._build()
         self._apply_topmost()
@@ -315,7 +326,7 @@ class App:
         hk = self._card(page, "Hotkeys", "Work everywhere, even when the game window is active")
         self.hotkey_labels = {}
         for label, key in (("Start / Stop", "hotkey_start_stop"), ("Change Area", "hotkey_change_area"),
-                           ("Exit", "hotkey_exit")):
+                           ("Exit", "hotkey_exit"), ("Screen Off / On", "hotkey_blackout")):
             row = self._row(hk)
             self._label(hk, row, label)
             right = tk.Frame(hk, bg=CARD)
@@ -330,6 +341,13 @@ class App:
 
         win = self._card(page, "Window")
         self._switch(win, "Always on Top", "always_on_top", command=self._apply_topmost)
+
+        bo = self._card(page, "Screen Off While Fishing",
+                        "Black screen for you, the macro still sees the game")
+        self._switch(bo, "Turn screen black when the macro starts", "blackout_enabled",
+                     "Any key / mouse button, the hotkey or the Telegram button turns it back on")
+        self._switch(bo, "All monitors", "blackout_all_monitors", "Off = only the monitor with Roblox")
+        self._num(bo, "Delay before going black", "blackout_delay", "After pressing Start", unit="s")
 
         nh = self._card(page, "Number Hotkeys", "Hotbar slots in the game")
         self._option(nh, "Rod Hotkey", "rod_hotkey", DIGITS, "Slot with your fishing rod")
@@ -487,6 +505,8 @@ class App:
         self._num(al, "Repeat Alarm Every (s)", "alarm_repeat_sec",
                   "Repeat until you press Stop Alarm or Start (0 = once)")
         self._switch(al, "Attach screenshot (Telegram)", "alarm_screenshot")
+        self._switch(al, "Telegram control buttons", "tg_control",
+                     "Bot buttons: screen on/off, screenshot, status, stop. Send /menu to the bot")
         self._buttons(al, ("Test Alarm", self._test_alarm, ACCENT, ACCENT_HOVER),
                       ("Stop Alarm", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
 
@@ -621,6 +641,45 @@ class App:
     def _refresh_hotkey_hint(self):
         self.start_hint.configure(text=f"or press {self.cfg['hotkey_start_stop'].upper()}")
 
+    def log_threadsafe(self, text):
+        self.events.put(("log", text))
+
+    # ---------- чёрный экран ----------
+    def _blackout_on(self):
+        self._blackout_job = None
+        if self.blackout.show(bool(self.cfg["blackout_all_monitors"])):
+            self.tg.send("🌑 Экран затемнён, макрос ловит рыбу")
+
+    def _blackout_off(self, notify=False):
+        if self._blackout_job:
+            self.root.after_cancel(self._blackout_job)
+            self._blackout_job = None
+        if self.blackout.active:
+            self.blackout.hide()
+            if notify:
+                self.tg.send("🔆 Экран включён", buttons=False)
+
+    def _on_tg(self, cmd):
+        if cmd == "screen_on":
+            self._blackout_off()
+            self.tg.send("🔆 Экран включён")
+        elif cmd == "screen_off":
+            self._blackout_on()
+        elif cmd == "stop":
+            self.engine.stop()
+            self.tg.send("⏹ Макрос остановлен")
+        elif cmd == "shot":
+            def job():
+                try:
+                    png = screen.screenshot_png()  # чёрное окно в захват не попадает — видна игра
+                except Exception as exc:
+                    self.log_threadsafe(f"Скриншот не удался: {exc}")
+                    return
+                self.tg.send_photo(png, status_text(self.engine, self.blackout.active))
+            threading.Thread(target=job, daemon=True).start()
+        elif cmd in ("status", "menu"):
+            self.tg.send(status_text(self.engine, self.blackout.active))
+
     def log(self, text):
         self.log_box.configure(state="normal")
         self.log_box.insert("end", time.strftime("[%H:%M:%S] ") + text + "\n")
@@ -632,9 +691,13 @@ class App:
 
     def exit(self):
         self.engine.stop()
+        self._blackout_off()
+        self.tg.stop()
         self._save()
         if getattr(self, "listener", None):
             self.listener.stop()
+        if getattr(self, "mouse_listener", None):
+            self.mouse_listener.stop()
         self.root.destroy()
 
     # ---------- горячие клавиши и события из потоков ----------
@@ -643,9 +706,23 @@ class App:
         if keyboard is None:
             self.log("pynput не установлен — горячие клавиши F1/F2/F3 не работают")
             return
-        self.listener = keyboard.Listener(on_press=lambda k: self.events.put(("key", key_name(k))))
+        def real_keys_only(msg, data):
+            return not (data.flags & LLKHF_INJECTED)
+
+        def real_clicks_only(msg, data):
+            return not (data.flags & LLMHF_INJECTED)
+
+        win = sys.platform == "win32"
+        self.listener = keyboard.Listener(on_press=lambda k: self.events.put(("key", key_name(k))),
+                                          **({"win32_event_filter": real_keys_only} if win else {}))
         self.listener.daemon = True
         self.listener.start()
+        # Мышь слушаем только ради «разбудить экран»: кнопки, не движение
+        self.mouse_listener = mouse.Listener(
+            on_click=lambda x, y, button, pressed: pressed and self.events.put(("click", None)),
+            **({"win32_event_filter": real_clicks_only} if win else {}))
+        self.mouse_listener.daemon = True
+        self.mouse_listener.start()
 
     def _on_key(self, name):
         if not name:
@@ -656,6 +733,16 @@ class App:
             self.hotkey_labels[key].configure(text=name.upper(), text_color=ACCENT)
             self._refresh_hotkey_hint()
             self._save()
+            return
+        if name == self.cfg["hotkey_blackout"]:
+            if self.blackout.active:
+                self._blackout_off(notify=True)
+            else:
+                self._blackout_on()
+            return
+        if self.blackout.active:
+            # Любая клавиша будит экран и больше ничего не делает
+            self._blackout_off(notify=True)
             return
         if self._overlay_open():
             # Пока открыт выбор области/точки — только отмена, остальные горячие клавиши молчат
@@ -686,6 +773,11 @@ class App:
                     self.status.configure(text=f"  ●  {text}  ", fg_color=STATUS_COLORS.get(color, color))
                 elif kind == "stats":
                     self._stats = payload
+                elif kind == "click":
+                    if self.blackout.active:
+                        self._blackout_off(notify=True)
+                elif kind == "tg":
+                    self._on_tg(payload)
         except queue.Empty:
             pass
         except tk.TclError:
@@ -698,11 +790,18 @@ class App:
         running = self.engine.running
         if running == self._was_running:
             return
-        self._was_running = running
+        was_running, self._was_running = self._was_running, running
         if running:
             self.start_btn.configure(text="■  Stop", fg_color=RED, hover_color=RED_HOVER)
+            if self.cfg.get("blackout_enabled") and not self.blackout.active:
+                delay = max(float(self.cfg.get("blackout_delay") or 0), 0)
+                self._blackout_job = self.root.after(int(delay * 1000), self._blackout_on)
         else:
             self.start_btn.configure(text="▶  Start", fg_color=GREEN, hover_color=GREEN_HOVER)
+            if was_running:
+                # Макрос остановился (вручную или по тревоге) — экран обратно, чтобы было видно, что случилось
+                self._blackout_off()
+                self.tg.send("⏹ Макрос остановлен\n" + status_text(self.engine, False))
 
     def _refresh_stats(self):
         s = self._stats

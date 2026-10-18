@@ -9,6 +9,7 @@ DEFAULTS = {
     "hotkey_start_stop": "f1",
     "hotkey_change_area": "f2",
     "hotkey_exit": "f3",
+    "hotkey_blackout": "f4",
     "always_on_top": True,
     "rod_hotkey": "7",
     "other_hotkey": "2",
@@ -74,6 +75,12 @@ DEFAULTS = {
     "dark_max": 60,
     "progress_color": [173, 254, 128],
     "require_progress": True,
+
+    # Чёрный экран во время рыбалки
+    "blackout_enabled": False,
+    "blackout_all_monitors": True,
+    "blackout_delay": 3.0,
+    "tg_control": True,
 
     # Phone alarm
     "alarm_enabled": True,

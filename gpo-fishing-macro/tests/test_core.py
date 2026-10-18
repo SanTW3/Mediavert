@@ -251,3 +251,57 @@ def test_engine_full_loop(monkeypatch):
     assert actions[i + 1:i + 7] == [("click", (1, 1)), ("click", (2, 2)), ("type", "5"),
                                     ("click", (1, 1)), ("click", (3, 3)), ("click", (2, 2))]
     assert actions.count(("down",)) == actions.count(("up",))  # мышь никогда не остаётся зажатой
+
+
+def test_telegram_control_accepts_only_own_chat():
+    from urllib.parse import parse_qs
+    from macro import tgcontrol
+    sent = []
+    updates = [
+        {"update_id": 5, "callback_query": {"id": "a", "data": "screen_on", "message": {"chat": {"id": 111}}}},
+        {"update_id": 6, "callback_query": {"id": "b", "data": "stop", "message": {"chat": {"id": 999}}}},
+        {"update_id": 7, "message": {"chat": {"id": 111}, "text": "/shot"}},
+        {"update_id": 8, "message": {"chat": {"id": 999}, "text": "/stop"}},
+    ]
+    state = {"served": False}
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            method = self.path.rsplit("/", 1)[-1]
+            params = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
+            if method == "getUpdates":
+                if params.get("offset") == ["-1"]:
+                    result = [{"update_id": 4}]  # старое сообщение до запуска — пропускаем
+                elif not state["served"]:
+                    state["served"] = True
+                    result = updates
+                else:
+                    time.sleep(0.2)
+                    result = []
+            else:
+                sent.append((method, params))
+                result = True
+            body = json.dumps({"ok": True, "result": result}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    from http.server import ThreadingHTTPServer
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    tgcontrol.API = f"http://127.0.0.1:{srv.server_port}"
+    got = []
+    cfg = dict(config.DEFAULTS, telegram_token="T", telegram_chat_id="111", tg_control=True)
+    ctl = tgcontrol.TelegramControl(cfg, got.append, log=lambda t: None)
+    deadline = time.time() + 5
+    while len(got) < 2 and time.time() < deadline:
+        time.sleep(0.05)
+    ctl.stop()
+    srv.shutdown()
+    tgcontrol.API = "https://api.telegram.org"
+    assert got == ["screen_on", "shot"]  # команды из чужого чата 999 проигнорированы
+    assert [m for m, _ in sent] == ["answerCallbackQuery"]

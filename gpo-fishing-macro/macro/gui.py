@@ -150,7 +150,7 @@ class App:
             on_stats=lambda stats: self.events.put(("stats", stats)),
             on_catch=self._on_catch,
         )
-        self.catch_log = CatchLog(self.log_threadsafe)
+        self.catch_log = CatchLog(self.cfg, self.log_threadsafe)
 
         self.blackout = Blackout(self.root, self.log_threadsafe)
         self._blackout_job = None
@@ -361,7 +361,7 @@ class App:
         self._switch(bo, "Гасить экран после старта", "blackout_enabled",
                      "Вернуть: любая клавиша или кнопка мыши, горячая клавиша или кнопка в Telegram")
         self._switch(bo, "Все мониторы", "blackout_all_monitors", "Выкл — только монитор с Roblox")
-        self._num(bo, "Задержка перед затемнением", "blackout_delay", "После нажатия «Старт»", unit="s")
+        self._num(bo, "Задержка перед затемнением", "blackout_delay", "После нажатия «Старт»", unit="с")
 
         nh = self._card(page, "Слоты предметов", "Номера слотов на панели в игре")
         self._option(nh, "Слот удочки", "rod_hotkey", DIGITS, "Где лежит удочка")
@@ -374,8 +374,8 @@ class App:
         wp = self._card(page, "Точка воды", "Куда целится курсор при забросе")
         self._point(wp, "Указать точку воды", "water_point", "Кликните по воде, куда забрасывать удочку")
         ct = self._card(page, "Время заброса")
-        self._num(ct, "Удержание при забросе", "cast_hold", "Сколько держать ЛКМ при забросе", unit="s")
-        self._num(ct, "Перезаброс через", "recast_timeout", "Если за это время не клюнуло", unit="s")
+        self._num(ct, "Удержание при забросе", "cast_hold", "Сколько держать ЛКМ при забросе", unit="с")
+        self._num(ct, "Перезаброс через", "recast_timeout", "Если за это время не клюнуло", unit="с")
 
     # --- Fishing ---
     def _tab_fishing(self, tab):
@@ -399,8 +399,9 @@ class App:
                       ("Проверить сейчас", self._test_catch, FIELD, CARD_BORDER))
         self._buttons(cl, ("Отправить улов", self._send_catches, FIELD, CARD_BORDER),
                       ("Очистить", self._clear_catches, FIELD, CARD_BORDER))
+        self._fish_catalog_card(page)
         tm = self._card(page, "Тайминги")
-        self._num(tm, "Пауза после рыбы", "fish_end_delay", "Ожидание после конца мини-игры", unit="s")
+        self._num(tm, "Пауза после рыбы", "fish_end_delay", "Ожидание после конца мини-игры", unit="с")
 
     # --- Pre-Cast ---
     def _tab_precast(self, tab):
@@ -696,6 +697,61 @@ class App:
                 self.tg.send("🔆 Экран включён", buttons=False)
 
     # ---------- журнал улова ----------
+    def _fish_catalog_card(self, page):
+        """Каталог рыб: иконка из игры, редкость и своё название (имён в игре нет)."""
+        from PIL import Image
+        from . import fishdb
+        card = self._card(page, "Каталог рыб", "Иконки из инвентаря игры. Названия можно поменять")
+        self._fish_images = []
+        self._rainbow_labels = []
+        names = self.cfg.setdefault("fish_names", {})
+        for fish in sorted(fishdb.FISH, key=lambda f: (fishdb.RARITY_ORDER[f["rarity"]], -f["price"])):
+            row = self._row(card)
+            left = tk.Frame(card, bg=CARD)
+            left.grid(row=row, column=0, sticky="w", pady=3)
+            bg = Image.new("RGBA", (40, 40), (79, 79, 79, 255))
+            ic = fishdb.icon(fish["id"]).copy()
+            ic.thumbnail((36, 36))
+            bg.alpha_composite(ic, ((40 - ic.width) // 2, (40 - ic.height) // 2))
+            img = ctk.CTkImage(bg, size=(40, 40))
+            self._fish_images.append(img)
+            ctk.CTkLabel(left, text="", image=img, width=40).pack(side="left", padx=(0, 10))
+            info = fishdb.RARITIES[fish["rarity"]]
+            color = info["color"]
+            lbl = tk.Label(left, text=info["title"].upper(), font=(self.display, 10, "bold", "italic"), bg=CARD,
+                           fg=HILITE if color == "rainbow" else color, width=12, anchor="w")
+            lbl.pack(side="left")
+            if color == "rainbow":
+                self._rainbow_labels.append(lbl)
+            tk.Label(left, text=f"{fish['price']} Peli", font=TK_HINT, fg=MUTED, bg=CARD).pack(side="left", padx=6)
+            var = tk.StringVar(value=names.get(fish["id"]) or fish["name"])
+
+            def changed(*_, fid=fish["id"], default=fish["name"], v=var):
+                text = v.get().strip()
+                if text and text != default:
+                    names[fid] = text
+                else:
+                    names.pop(fid, None)
+                self._schedule_save()
+            var.trace_add("write", changed)
+            ctk.CTkEntry(card, width=190, textvariable=var, fg_color=FIELD, border_color=CARD_BORDER).grid(
+                row=row, column=1, sticky="e", pady=3)
+        if self._rainbow_labels:
+            self._rainbow_phase = 0.0
+            self.root.after(120, self._animate_rainbow)
+
+    def _animate_rainbow(self):
+        """Легендарная редкость переливается: смена цвета пары надписей — нагрузки почти нет."""
+        import colorsys
+        try:
+            self._rainbow_phase = (self._rainbow_phase + 0.04) % 1.0
+            r, g, b = (int(c * 255) for c in colorsys.hsv_to_rgb(self._rainbow_phase, 0.7, 1.0))
+            for lbl in self._rainbow_labels:
+                lbl.configure(fg=f"#{r:02x}{g:02x}{b:02x}")
+            self.root.after(120, self._animate_rainbow)
+        except tk.TclError:
+            pass  # окно закрыто
+
     def _catch_area_text(self):
         a = self.cfg.get("catch_area")
         return f"{a[2]}×{a[3]} в X {a[0]}, Y {a[1]}" if a else "Не задана"
@@ -711,15 +767,16 @@ class App:
     def _on_catch(self, rgb):
         """Из потока макроса: распознаём в отдельном потоке, чтобы не тормозить рыбалку."""
         def job():
-            catch = self.catch_log.add(rgb)
-            self.log_threadsafe(f"Поймано: {catch.name} (×{catch.count})")
+            log = self.catch_log
+            catch = log.add(rgb)
+            name = log.name_of(catch)
+            self.log_threadsafe(f"Поймано: {name} (×{catch.count})")
             self.remote.poke()
             if self.cfg.get("catch_notify_each"):
-                import io
-                from PIL import Image
-                buf = io.BytesIO()
-                Image.fromarray(rgb).save(buf, "PNG")
-                self.tg.send_photo(buf.getvalue(), f"🐟 {catch.name} × {catch.count} · всего {self.catch_log.total}")
+                from .catches import RARITY_EMOJI
+                data, kind = log.render(rows=[catch])
+                self.tg.send_media(data, kind, f"{RARITY_EMOJI.get(catch.rarity, '🐟')} {name} × {catch.count}"
+                                               f" · всего {log.total}")
         threading.Thread(target=job, daemon=True).start()
 
     def _test_catch(self):
@@ -729,13 +786,19 @@ class App:
             return
 
         def job():
-            from . import ocr
+            from . import fishdb, ocr
             from .catches import clean_name
             rgb = screen.grab(area)
+            fish, score = fishdb.match(rgb)
+            if fish:
+                self.log_threadsafe(f"Узнал рыбу: {fishdb.display_name(fish, self.cfg)} "
+                                    f"({fishdb.RARITIES[fish['rarity']]['title'].lower()}), сходство {score:.0%}")
+                return
             text = ocr.read_text(rgb)
             if not ocr.available():
-                self.log_threadsafe("Windows OCR недоступен — рыба будет группироваться по иконке")
-            self.log_threadsafe(f"Распознано: «{text.strip()}» → название: «{clean_name(text) or 'не найдено'}»")
+                self.log_threadsafe("Windows OCR недоступен — неизвестные рыбы будут группироваться по снимку")
+            self.log_threadsafe(f"Рыба не из каталога (сходство {score:.0%}). Текст: «{text.strip()}» → "
+                                f"«{clean_name(text) or 'не найдено'}»")
         threading.Thread(target=job, daemon=True).start()
 
     def _send_catches(self):
@@ -745,7 +808,8 @@ class App:
         log = self.catch_log
 
         def job():
-            self.tg.send_photo(log.render_png(), log.summary_text()[:1000])
+            data, kind = log.render()
+            self.tg.send_media(data, kind, log.summary_text())
         threading.Thread(target=job, daemon=True).start()
 
     def _clear_catches(self):

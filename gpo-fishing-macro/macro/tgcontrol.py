@@ -106,6 +106,21 @@ class TelegramControl:
             except Exception as exc:
                 self.log(f"Telegram: не удалось отправить скриншот: {exc}")
 
+    def send_media(self, data, kind, caption):
+        """Картинка (png) или анимация (gif) с подписью."""
+        token, chat = self._creds()
+        if not token:
+            return
+        if kind != "gif":
+            self.send_photo(data, caption)
+            return
+        try:
+            body, ctype = alarm._multipart({"chat_id": chat, "caption": caption[:1000]},
+                                           {"animation": ("catch.gif", data, "image/gif")})
+            alarm._post(f"{API}/bot{token}/sendAnimation", body, {"Content-Type": ctype})
+        except Exception as exc:
+            self.log(f"Telegram: не удалось отправить анимацию: {exc}")
+
     def _loop(self):
         while not self._stop.is_set():
             token, chat = self._creds()

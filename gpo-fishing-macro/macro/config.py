@@ -81,6 +81,7 @@ DEFAULTS = {
     "catch_area": None,
     "catch_capture_delay": 1.0,
     "catch_notify_each": False,
+    "fish_names": {},          # свои названия рыб из каталога: {"04": "…"}
 
     # Чёрный экран во время рыбалки
     "blackout_enabled": False,

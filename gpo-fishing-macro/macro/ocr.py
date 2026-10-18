@@ -49,8 +49,13 @@ async def _recognize(engine, rgb):
     bgra[:, :, 3] = 255
     writer = DataWriter()
     writer.write_bytes(bgra.tobytes())
-    bitmap = SoftwareBitmap.create_copy_from_buffer(writer.detach_buffer(), BitmapPixelFormat.BGRA8, w, h,
-                                                    BitmapAlphaMode.PREMULTIPLIED)
+    buffer = writer.detach_buffer()
+    try:
+        bitmap = SoftwareBitmap.create_copy_from_buffer(buffer, BitmapPixelFormat.BGRA8, w, h)
+    except TypeError:
+        # В разных версиях winrt разный набор перегрузок — запасной путь
+        bitmap = SoftwareBitmap(BitmapPixelFormat.BGRA8, w, h, BitmapAlphaMode.PREMULTIPLIED)
+        bitmap.copy_from_buffer(buffer)
     result = await engine.recognize_async(bitmap)
     return result.text or ""
 

@@ -1,4 +1,5 @@
 """Окно управления макросом (CustomTkinter): тёмная тема, карточки, вкладки как в оригинале."""
+import ctypes
 import os
 import queue
 import sys
@@ -61,6 +62,43 @@ def key_name(key):
 
 def fmt_point(p):
     return f"X {p[0]}  ·  Y {p[1]}" if p else "Not set"
+
+
+def smooth_scrolling(frame):
+    """Прокрутка без «рваных» полос на Windows.
+
+    Каждый виджет внутри CTkScrollableFrame — отдельное окно Windows, и при быстрой прокрутке
+    система перерисовывает их по очереди: старые кадры остаются полосами поверх новых.
+    Поэтому на время сдвига отключаем перерисовку холста (WM_SETREDRAW), даём Tk расставить
+    все виджеты на новые места и перерисовываем холст со всеми детьми одним разом.
+    """
+    if sys.platform != "win32":
+        return frame
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    user32.SendMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+    user32.RedrawWindow.argtypes = (wintypes.HWND, ctypes.c_void_p, ctypes.c_void_p, wintypes.UINT)
+    wm_setredraw = 0x000B
+    # RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME
+    flags = 0x0001 | 0x0004 | 0x0080 | 0x0100 | 0x0400
+    canvas = frame._parent_canvas
+    original = canvas.yview
+
+    def yview(*args):
+        if not args:
+            return original()
+        hwnd = canvas.winfo_id()
+        user32.SendMessageW(hwnd, wm_setredraw, 0, 0)
+        try:
+            original(*args)
+            canvas.update_idletasks()
+        finally:
+            user32.SendMessageW(hwnd, wm_setredraw, 1, 0)
+            user32.RedrawWindow(hwnd, None, None, flags)
+
+    canvas.yview = yview  # колесо мыши (CTk вызывает self._parent_canvas.yview)
+    frame._scrollbar.configure(command=yview)  # перетаскивание полосы прокрутки
+    return frame
 
 
 def resource(name):
@@ -218,7 +256,8 @@ class App:
         return row
 
     def _scroll(self, tab):
-        frame = ctk.CTkScrollableFrame(tab, fg_color="transparent", scrollbar_button_color=CARD_BORDER)
+        frame = smooth_scrolling(ctk.CTkScrollableFrame(tab, fg_color="transparent",
+                                                        scrollbar_button_color=CARD_BORDER))
         frame.pack(fill="both", expand=True)
         return frame
 
@@ -380,8 +419,8 @@ class App:
         nav.pack(fill="x", pady=(0, 8))
         holder.pack(fill="both", expand=True)
         for name in groups:
-            pages[name] = ctk.CTkScrollableFrame(holder, fg_color="transparent",
-                                                 scrollbar_button_color=CARD_BORDER)
+            pages[name] = smooth_scrolling(ctk.CTkScrollableFrame(holder, fg_color="transparent",
+                                                                  scrollbar_button_color=CARD_BORDER))
 
         page = pages["Delays"]
         f = self._card(page, "Roblox Window Focus")

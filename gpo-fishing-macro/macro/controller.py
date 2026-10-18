@@ -2,11 +2,12 @@
 
 
 class PDController:
-    def __init__(self, kp=0.9, kd=0.3, clamp=1.0, approach_damping=2.0):
+    def __init__(self, kp=0.9, kd=0.3, clamp=1.0, approach_damping=2.0, chase_damping=0.5):
         self.kp = kp
         self.kd = kd
         self.clamp = clamp
         self.approach_damping = approach_damping
+        self.chase_damping = chase_damping
         self.reset()
 
     def reset(self):
@@ -26,8 +27,14 @@ class PDController:
             derivative = (error - self._prev_error) / dt
         self._prev_error = error
 
-        # Зона уже едет к рыбе (ошибка уменьшается) — тормозим сильнее, чтобы не перелететь
-        kd = self.kd * self.approach_damping if error * derivative < 0 else self.kd
+        # Полоса едет к рыбе (ошибка уменьшается) — тормозим сильнее, чтобы не перелететь;
+        # уезжает от рыбы — демпфируем слабее, чтобы быстрее догнать
+        if error * derivative < 0:
+            kd = self.kd * self.approach_damping
+        elif error * derivative > 0:
+            kd = self.kd * self.chase_damping
+        else:
+            kd = self.kd
         u = self.kp * error + kd * derivative
         u = max(-self.clamp, min(self.clamp, u))
 

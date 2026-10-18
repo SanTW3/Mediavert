@@ -31,7 +31,8 @@ class Preview(tk.Toplevel):
         cfg = self.cfg
         rgb = screen.grab(area)
         return rgb, detect(rgb, cfg["zone_color"], int(cfg["zone_tolerance"]),
-                           int(cfg["fish_white_min"]), int(cfg["min_zone_pixels"]))
+                           int(cfg["fish_white_min"]), int(cfg["min_zone_pixels"]),
+                           cfg["bar_mode"], int(cfg["dark_max"]), float(cfg["gap_mult"]))
 
     def _tick(self):
         if not self.winfo_exists():
@@ -52,10 +53,10 @@ class Preview(tk.Toplevel):
                 if det.fish_y is not None:
                     draw.line([0, det.fish_y, img.width, det.fish_y], fill=(255, 0, 0), width=2)
                 fish = f"{det.fish_y:.0f}" if det.fish_y is not None else "not found"
-                self.info.config(text=f"Minigame: FOUND\nZone (magenta): {det.zone_top}-{det.zone_bottom}\n"
+                self.info.config(text=f"Minigame: FOUND\nPlayer bar (magenta): {det.zone_top}-{det.zone_bottom}\n"
                                       f"Fish line (red): {fish}\nTrack (yellow): {det.bar_top}-{det.bar_bottom}")
             else:
-                self.info.config(text="Minigame: not found\n(проверьте область и цвет зоны)")
+                self.info.config(text="Minigame: not found\n(проверьте область и цвет трека)")
             scale = max(1, min(3, 400 // max(img.height, 1)))
             img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
             self._photo = ImageTk.PhotoImage(img)

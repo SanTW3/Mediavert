@@ -60,6 +60,7 @@ class MacroEngine:
         self._stop = threading.Event()
         self._thread = None
         self._mouse_held = False
+        self._mouse_sent = 0.0
         self.last_detection = None
         self.stats = {"casts": 0, "catches": 0, "loops": 0, "started": None}
 
@@ -138,12 +139,19 @@ class MacroEngine:
                 return
             self._stop.wait(min(left, 0.1))
 
-    def _set_mouse(self, held):
-        if held and not self._mouse_held:
-            winput.mouse_down()
-        elif not held and self._mouse_held:
+    def _set_mouse(self, held, resend_after=None):
+        """Меняет состояние ЛКМ. resend_after — Control State Sync: если состояние не менялось
+        дольше этого времени, повторяем событие, чтобы игра не «потеряла» зажатую/отпущенную кнопку."""
+        now = time.monotonic()
+        stale = resend_after is not None and resend_after > 0 and now - self._mouse_sent >= resend_after
+        if held != self._mouse_held or (stale and held):
+            winput.mouse_down() if held else winput.mouse_up()
+        elif stale:
             winput.mouse_up()
+        else:
+            return
         self._mouse_held = held
+        self._mouse_sent = now
 
     def _delay(self, key):
         self._sleep(float(self.cfg[key]))
@@ -187,7 +195,8 @@ class MacroEngine:
         cfg = self.cfg
         rgb = screen.grab(cfg["area"])
         det = detect(rgb, cfg["zone_color"], int(cfg["zone_tolerance"]),
-                     int(cfg["fish_white_min"]), int(cfg["min_zone_pixels"]))
+                     int(cfg["fish_white_min"]), int(cfg["min_zone_pixels"]),
+                     cfg["bar_mode"], int(cfg["dark_max"]), float(cfg["gap_mult"]))
         self.last_detection = (rgb, det)
         return det
 
@@ -286,7 +295,8 @@ class MacroEngine:
         cfg = self.cfg
         self.on_status("Fishing", "green")
         ctrl = PDController(float(cfg["kp"]), float(cfg["kd"]), float(cfg["pd_clamp"]),
-                            float(cfg["approach_damping"]))
+                            float(cfg["approach_damping"]), float(cfg["chase_damping"]))
+        resend = float(cfg["resend_interval"])
         frame = 1.0 / max(int(cfg["scan_fps"]), 5)
         last_fish = None
         lost_since = None
@@ -308,7 +318,7 @@ class MacroEngine:
                     fish = det.fish_y if det.fish_y is not None else last_fish
                     if fish is not None:
                         last_fish = fish
-                        self._set_mouse(ctrl.update(det.zone_center, fish, det.bar_height, dt))
+                        self._set_mouse(ctrl.update(det.zone_center, fish, det.bar_height, dt), resend)
                 spent = time.monotonic() - now
                 self._stop.wait(max(frame - spent, 0.001))
             self.log("Мини-игра длится больше 3 минут — сбрасываю")

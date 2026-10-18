@@ -67,6 +67,11 @@ DEFAULTS = {
     "cursor_delay": 0.05,
     "scan_loop_delay": 0.1,
     "approach_damping": 2.0,
+    "chase_damping": 0.5,
+    "gap_mult": 2.0,
+    "resend_interval": 0.5,
+    "bar_mode": "dark",
+    "dark_max": 60,
 
     # Phone alarm
     "alarm_enabled": True,

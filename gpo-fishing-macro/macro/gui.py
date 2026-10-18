@@ -300,7 +300,15 @@ class App:
 
         f = self._section(inner, "PD Control Damping (Advanced)")
         self._adv(f, "Approaching Damping Multiplier:", "approach_damping",
-                  "Extra Kd when the zone is already moving towards the fish (less overshoot)")
+                  "Damping strength when bar is moving TOWARD target (higher = stronger brake)")
+        self._adv(f, "Chasing Damping Multiplier:", "chase_damping",
+                  "Damping strength when bar is moving AWAY from target (lower = faster chase)")
+        self._adv(f, "Gap Tolerance Multiplier:", "gap_mult",
+                  "Multiplier for grouping dark gray pixels (gap_tolerance = white_height * THIS)")
+
+        f = self._section(inner, "Control State Sync")
+        self._adv(f, "State Resend Interval (s):", "resend_interval",
+                  "Resend mouse input every X seconds if in same state (prevents game desync)")
 
         # Будильник
         al = self._section(inner, "Phone Alarm")
@@ -336,16 +344,25 @@ class App:
 
         # Распознавание
         dt = self._section(inner, "Minigame Detection")
-        ttk.Label(dt, text="Zone color:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=3)
+        ttk.Label(dt, text="Track color (blue):").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=3)
         self.color_swatch = tk.Label(dt, width=10, relief="solid", bd=1)
         self.color_swatch.grid(row=0, column=1, sticky="e", padx=(0, 4))
         ttk.Button(dt, text="Pick from screen", command=self._pick_color).grid(row=1, column=1, sticky="e",
                                                                                padx=(0, 4), pady=(2, 0))
         self._update_swatch()
-        self._adv(dt, "Color Tolerance:", "zone_tolerance", "How far a pixel may differ from the zone color", kind=int)
+        self._adv(dt, "Color Tolerance:", "zone_tolerance", "How far a pixel may differ from the track color",
+                  kind=int)
+        self._adv(dt, "Dark Gray Max Brightness:", "dark_max", "Brightest pixel still counted as the player bar",
+                  kind=int)
+        row = dt.grid_size()[1]
+        ttk.Label(dt, text="Player Bar Is:").grid(row=row, column=0, sticky="w", padx=(10, 10), pady=(6, 0))
+        ttk.Combobox(dt, values=["dark", "blue"], width=7, state="readonly",
+                     textvariable=self.var("bar_mode", str)).grid(row=row, column=1, sticky="e", padx=(0, 4))
+        tk.Label(dt, text="↳ dark = dark gray bar on blue track (default), blue = the opposite",
+                 fg="gray", font=("Segoe UI", 8)).grid(row=row + 1, column=0, columnspan=2, sticky="w", padx=(30, 0))
         self._adv(dt, "Fish Line Brightness:", "fish_white_min", "Min brightness of the white fish line (0-255)",
                   kind=int)
-        self._adv(dt, "Min Zone Pixels:", "min_zone_pixels", "Fewer blue pixels = no minigame on screen", kind=int)
+        self._adv(dt, "Min Track Pixels:", "min_zone_pixels", "Fewer blue pixels = no minigame on screen", kind=int)
         self._adv(dt, "Minigame Scan Rate (FPS):", "scan_fps", "Screen checks per second while reeling", kind=int)
         area_row = ttk.Frame(dt)
         area_row.grid(row=dt.grid_size()[1], column=0, columnspan=2, sticky="w", pady=(6, 0))
@@ -389,9 +406,9 @@ class App:
                 self.cfg["zone_color"] = [int(c) for c in rgb]
                 self._update_swatch()
                 self._save()
-                self.log(f"Цвет зоны: {self.cfg['zone_color']}")
+                self.log(f"Цвет трека: {self.cfg['zone_color']}")
             self.root.after(150, grab)  # ждём, пока оверлей исчезнет
-        PointPicker(self.root, "Кликните по синей зоне мини-игры", done)
+        PointPicker(self.root, "Кликните по синему треку мини-игры", done)
 
     def _update_swatch(self):
         r, g, b = self.cfg["zone_color"]

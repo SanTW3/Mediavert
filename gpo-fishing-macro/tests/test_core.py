@@ -19,9 +19,10 @@ FIXTURE = os.path.join(os.path.dirname(__file__), "minigame.png")
 
 
 def synthetic(zone=(120, 200), fish=60, h=300, w=80):
-    img = np.full((h, w, 3), 24, np.uint8)
-    img[:, 30:42] = (24, 24, 24)
-    img[zone[0]:zone[1], 30:42] = (85, 170, 255)
+    """Синий трек 10..290, тёмно-серая полоса игрока zone, белая черта рыбы fish."""
+    img = np.full((h, w, 3), (60, 30, 20), np.uint8)
+    img[10:290, 30:42] = (85, 170, 255)
+    img[zone[0]:zone[1], 30:42] = (26, 26, 28)
     if fish is not None:
         img[fish:fish + 2, 28:44] = (232, 232, 232)
     img[150:250, 60:66] = (173, 254, 128)  # зелёная полоса прогресса — должна игнорироваться
@@ -32,17 +33,24 @@ def test_detect_real_screenshot():
     rgb = np.asarray(Image.open(FIXTURE).convert("RGB"))
     det = detect(rgb)
     assert det is not None
-    assert abs(det.zone_top - 84) <= 3 and abs(det.zone_bottom - 259) <= 3
+    # Тёмно-серая полоса игрока на y 222–283 экрана, рыба (белая черта, y 234) внутри неё
+    assert abs(det.zone_top - 18) <= 3 and abs(det.zone_bottom - 79) <= 3
     assert det.fish_y is not None and abs(det.fish_y - 30.5) <= 2
+    blue = detect(rgb, bar_mode="blue")
+    assert abs(blue.zone_top - 84) <= 3 and abs(blue.zone_bottom - 259) <= 3
 
 
 def test_detect_synthetic_and_fish_inside_zone():
     det = detect(synthetic())
     assert (det.zone_top, det.zone_bottom) == (120, 199)
     assert det.fish_y == 60.5
-    det = detect(synthetic(zone=(100, 200), fish=150))  # белая черта рвёт зону — склеиваем
+    assert (det.bar_top, det.bar_bottom) == (10, 289)
+    det = detect(synthetic(zone=(100, 200), fish=150))  # белая черта рвёт полосу — склеиваем
     assert (det.zone_top, det.zone_bottom) == (100, 199)
     assert det.fish_y == 150.5
+    # Без склейки (gap_mult=0) разрыв в 2 px всё ещё закрывается минимальным допуском
+    det = detect(synthetic(zone=(100, 200), fish=150), gap_mult=0)
+    assert (det.zone_top, det.zone_bottom) == (100, 199)
 
 
 def test_detect_nothing():
@@ -64,6 +72,34 @@ def test_pd_balanced_when_centered():
     ctrl = PDController(0.9, 0.3, 1.0)
     holds = sum(ctrl.update(150, 150, 300, 1 / 60) for _ in range(100))
     assert 45 <= holds <= 55
+
+
+def test_chase_damping_scales_kd():
+    # Рыба уходит от полосы (ошибка растёт): работает только chase_damping
+    off = PDController(0.9, 0.3, 1.0, approach_damping=5.0, chase_damping=0.0)
+    no_kd = PDController(0.9, 0.0, 1.0)
+    seq = [(250, 200 - i * 2) for i in range(60)]
+    assert [off.update(z, f, 300, 1 / 60) for z, f in seq] == [no_kd.update(z, f, 300, 1 / 60) for z, f in seq]
+
+
+def test_state_resend(monkeypatch):
+    from macro import engine as eng
+    sent = []
+    monkeypatch.setattr(eng.winput, "mouse_down", lambda: sent.append("down"))
+    monkeypatch.setattr(eng.winput, "mouse_up", lambda: sent.append("up"))
+    now = [100.0]
+    monkeypatch.setattr(eng.time, "monotonic", lambda: now[0])
+    e = eng.MacroEngine(dict(config.DEFAULTS), log=lambda t: None)
+    e._set_mouse(True, 0.5)
+    e._set_mouse(True, 0.5)
+    assert sent == ["down"]
+    now[0] += 0.6
+    e._set_mouse(True, 0.5)
+    assert sent == ["down", "down"]
+    e._set_mouse(False, 0.5)
+    now[0] += 0.6
+    e._set_mouse(False, 0.5)
+    assert sent == ["down", "down", "up", "up"]
 
 
 def test_watchdog():

@@ -258,7 +258,8 @@ class MacroEngine:
         self._check_black_screen()
         loops = self.stats["loops"]
         every = max(int(cfg["loops_per_purchase"] or 1), 1)
-        if cfg.get("auto_buy_bait") and loops % every == 0:
+        skip = cfg.get("buy_skip_first") and loops == 0  # «Не покупать при старте»
+        if cfg.get("auto_buy_bait") and loops % every == 0 and not skip:
             self.on_status("Покупка наживки", "blue")
             self._key(cfg["other_hotkey"], "rod_select_delay")  # убираем удочку, чтобы E сработала
             # E → левый → средний → ввод количества → левый → правый → средний

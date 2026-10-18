@@ -18,10 +18,9 @@ from PIL import Image, ImageDraw
 
 from . import fishdb, ocr, theme
 
-UNKNOWN = "Неизвестная рыба"
-RARITY_EMOJI = {"legendary": "🌈", "epic": "🟣", "rare": "🔵", "common": "⚪", None: "❔"}
-# Слова уведомления, которые не являются названием рыбы
-NOISE = re.compile(r"\b(you|caught|got|obtained|a|an|the|new|fish(ed)?|x\d+|\+\d+)\b", re.IGNORECASE)
+RARITY_EMOJI = {"legendary": "🌈", "epic": "🟣", "rare": "🔵", "common": "⚪", None: "🆕"}
+# Слова уведомления, которые не являются названием рыбы («Fish» оставляем — бывает в названиях)
+NOISE = re.compile(r"\b(you|caught|got|obtained|a|an|the|new|fished|x\d+|\+\d+)\b", re.IGNORECASE)
 
 
 def plural(n, forms):
@@ -43,28 +42,37 @@ def clean_name(text):
     return name.title() if name else ""
 
 
-def ahash(rgb, size=12):
-    """Средний хеш снимка: похожие картинки дают близкие хеши."""
-    img = Image.fromarray(np.asarray(rgb)[:, :, :3]).convert("L").resize((size, size), Image.BILINEAR)
-    a = np.asarray(img, dtype=np.float32)
-    return (a > a.mean()).flatten()
-
-
 def fmt_peli(n):
     return f"{n:,}".replace(",", " ")
 
 
 class Catch:
-    def __init__(self, key, name, icon, rarity=None, price=0, fish_id=None, hash_=None):
-        self.key = key
-        self.name = name          # у рыб из каталога имя при показе берётся из каталога
-        self.icon = icon          # PIL.Image
-        self.rarity = rarity
-        self.price = price
+    """Сколько поймано рыбы одного вида. Данные о рыбе (иконка, редкость, цена) — из каталога."""
+
+    def __init__(self, fish_id):
         self.fish_id = fish_id
-        self.hash = hash_
         self.count = 0
         self.first = self.last = time.time()
+        self.new = False          # рыба впервые попала в каталог при этой поимке
+
+    @property
+    def fish(self):
+        return fishdb.by_id(self.fish_id) or {"id": self.fish_id, "name": "Unknown Fish", "rarity": None, "price": 0}
+
+    @property
+    def rarity(self):
+        return self.fish.get("rarity")
+
+    @property
+    def price(self):
+        return self.fish.get("price") or 0
+
+    @property
+    def icon(self):
+        try:
+            return fishdb.icon(self.fish_id)
+        except OSError:
+            return Image.new("RGBA", (8, 8), (79, 79, 79, 255))
 
 
 class CatchLog:
@@ -83,48 +91,46 @@ class CatchLog:
         return sum(c.count for c in self.items)
 
     def name_of(self, c):
-        if c.fish_id:
-            return fishdb.display_name(fishdb.by_id(c.fish_id), self.cfg)
-        return c.name
+        return fishdb.display_name(c.fish, self.cfg)
 
     # ---------- запись ----------
-    def add(self, rgb, text=None):
-        """Записать улов по снимку области уведомления. Возвращает Catch."""
-        fish, _score = fishdb.match(rgb)
-        if fish:
-            key = "fish:" + fish["id"]
-            with self._lock:
-                match = next((c for c in self.items if c.key == key), None)
-                if match is None:
-                    match = Catch(key, fish["name"], fishdb.icon(fish["id"]), fish["rarity"], fish["price"],
-                                  fish_id=fish["id"])
-                    self.items.append(match)
-                return self._bump(match)
-        # Не из каталога: название через OCR, иначе — группировка по похожести снимка
+    def identify(self, rgb, text=None):
+        """(рыба, новая ли) по снимку уведомления. Новую рыбу добавляет в каталог."""
         if text is None:
             text = ocr.read_text(np.ascontiguousarray(np.asarray(rgb)[:, :, :3]))
         name = clean_name(text)
-        h = ahash(rgb)
-        with self._lock:
-            match = None
-            for c in self.items:
-                if c.fish_id:
-                    continue
-                if (name and c.name == name) or (not name and c.name == UNKNOWN
-                                                 and np.count_nonzero(c.hash != h) <= 14):
-                    match = c
-                    break
-            if match is None:
-                match = Catch(f"other:{len(self.items)}", name or UNKNOWN,
-                              Image.fromarray(np.asarray(rgb)[:, :, :3]), hash_=h)
-                self.items.append(match)
-            return self._bump(match)
+        # 1) По названию из уведомления — надёжнее всего
+        fish = fishdb.find_by_name(name, self.cfg) if name else None
+        if fish is None:
+            # 2) По иконке. Если у похожей рыбы уже есть другое прочитанное название — это другая рыба
+            found, _score = fishdb.match(rgb)
+            if found:
+                known = fishdb.learned_name(found["id"])
+                if name and known and known.lower() != name.lower():
+                    found = None
+                elif name and not known:
+                    fishdb.learn_name(found["id"], name)
+            fish = found
+        if fish is not None:
+            return fish, False
+        # 3) Такой рыбы ещё нет — заносим в каталог: иконка из уведомления, название оттуда же
+        fish = fishdb.add_fish(fishdb.extract_icon(rgb), name or None)
+        if name:
+            fishdb.learn_name(fish["id"], name)
+        return fish, True
 
-    @staticmethod
-    def _bump(c):
-        c.count += 1
-        c.last = time.time()
-        return c
+    def add(self, rgb, text=None):
+        """Записать улов по снимку области уведомления. Возвращает Catch."""
+        fish, new = self.identify(rgb, text)
+        with self._lock:
+            match = next((c for c in self.items if c.fish_id == fish["id"]), None)
+            if match is None:
+                match = Catch(fish["id"])
+                self.items.append(match)
+            match.count += 1
+            match.last = time.time()
+            match.new = new
+            return match
 
     def _sorted(self):
         with self._lock:
@@ -142,7 +148,7 @@ class CatchLog:
                  f"{len(rows)} {plural(len(rows), ('вид', 'вида', 'видов'))}"]
         if value:
             lines.append(f"💰 ≈ {fmt_peli(value)} Peli")
-        lines += [f"{RARITY_EMOJI.get(c.rarity, '❔')} {self.name_of(c)} × {c.count}" for c in rows[:limit]]
+        lines += [f"{RARITY_EMOJI.get(c.rarity, '🆕')} {self.name_of(c)} × {c.count}" for c in rows[:limit]]
         if len(rows) > limit:
             lines.append(f"…и ещё {len(rows) - limit}")
         return "\n".join(lines)
@@ -200,7 +206,7 @@ class CatchLog:
                                        box[1] + (box[3] - box[1] - icon.height) // 2))
             tx = box[2] + 18
             self._rarity_text(img, (tx, y + 10), self.name_of(c), name_font, c.rarity, phase)
-            title = fishdb.RARITIES.get(c.rarity, {}).get("title", "Не из каталога")
+            title = fishdb.rarity_info(c.rarity)["title"]
             sub = title.upper() + (f"  ·  {fmt_peli(c.price)} Peli" if c.price else "")
             d.text((tx, y + 44), sub, font=small_font, fill=theme._hex(theme.MUTED))
             cnt = f"× {c.count}"
@@ -215,7 +221,7 @@ class CatchLog:
         return Image.fromarray(np.repeat(row[None, :, :], max(height, 1), axis=0), "RGB")
 
     def _rarity_text(self, img, xy, text, font, rarity, phase):
-        color = fishdb.RARITIES.get(rarity, {}).get("color", theme.TEXT)
+        color = fishdb.rarity_info(rarity)["color"]
         if color != "rainbow":
             ImageDraw.Draw(img).text(xy, text, font=font, fill=theme._hex(color))
             return
@@ -225,7 +231,7 @@ class CatchLog:
         img.paste(self._rainbow(mask.width, mask.height, phase), (int(xy[0]), int(xy[1])), mask)
 
     def _frame(self, img, box, rarity, phase):
-        color = fishdb.RARITIES.get(rarity, {}).get("color", theme.MUTED)
+        color = fishdb.rarity_info(rarity)["color"]
         if color != "rainbow":
             ImageDraw.Draw(img).rectangle(box, outline=theme._hex(color), width=3)
             return

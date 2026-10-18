@@ -431,6 +431,8 @@ class App:
             self._point(f, "Правая точка", "buy_right", "Кликните по правой кнопке покупки")
             self._num(f, "Циклов на покупку", "loops_per_purchase", "Покупать наживку каждые N циклов", kind=int)
             self._switch(f, "Вводить количество", "buy_type_amount", "Вписывает «циклов на покупку» после первого клика по средней точке")
+            self._switch(f, "Не покупать при старте", "buy_skip_first",
+                         "Первая покупка — только через «Циклов на покупку», а не сразу после старта")
 
         def fruit(f):
             self._option(f, "Слот фрукта", "fruit_hotkey", DIGITS)
@@ -698,35 +700,66 @@ class App:
 
     # ---------- журнал улова ----------
     def _fish_catalog_card(self, page):
-        """Каталог рыб: иконка из игры, редкость и своё название (имён в игре нет)."""
-        from PIL import Image
-        from . import fishdb
-        card = self._card(page, "Каталог рыб", "Иконки из инвентаря игры. Названия можно поменять")
+        """Каталог рыб: иконка, редкость и название. Новые рыбы появляются здесь сами."""
+        self._catalog_body = self._card(page, "Каталог рыб",
+                                        "Названия — из уведомления игры. Можно поменять своё. Новые рыбы добавляются сами")
         self._fish_images = []
         self._rainbow_labels = []
+        self._fill_catalog()
+        self._rainbow_phase = 0.0
+        self.root.after(120, self._animate_rainbow)
+
+    def _fill_catalog(self):
+        from PIL import Image
+        from . import fishdb
+        card = self._catalog_body
+        for child in card.winfo_children():
+            child.destroy()
+        self._fish_images.clear()
+        self._rainbow_labels.clear()
         names = self.cfg.setdefault("fish_names", {})
-        for fish in sorted(fishdb.FISH, key=lambda f: (fishdb.RARITY_ORDER[f["rarity"]], -f["price"])):
+        rarity_titles = {fishdb.NEW_RARITY["title"]: None}
+        rarity_titles.update({v["title"]: k for k, v in fishdb.RARITIES.items()})
+        fish_list = sorted(fishdb.all_fish(), key=lambda f: (fishdb.RARITY_ORDER.get(f["rarity"], 4),
+                                                              -(f.get("price") or 0), f["id"]))
+        for fish in fish_list:
             row = self._row(card)
             left = tk.Frame(card, bg=CARD)
             left.grid(row=row, column=0, sticky="w", pady=3)
             bg = Image.new("RGBA", (40, 40), (79, 79, 79, 255))
-            ic = fishdb.icon(fish["id"]).copy()
-            ic.thumbnail((36, 36))
-            bg.alpha_composite(ic, ((40 - ic.width) // 2, (40 - ic.height) // 2))
+            try:
+                ic = fishdb.icon(fish["id"]).copy()
+                ic.thumbnail((36, 36))
+                bg.alpha_composite(ic, ((40 - ic.width) // 2, (40 - ic.height) // 2))
+            except OSError:
+                pass
             img = ctk.CTkImage(bg, size=(40, 40))
             self._fish_images.append(img)
             ctk.CTkLabel(left, text="", image=img, width=40).pack(side="left", padx=(0, 10))
-            info = fishdb.RARITIES[fish["rarity"]]
-            color = info["color"]
-            lbl = tk.Label(left, text=info["title"].upper(), font=(self.display, 10, "bold", "italic"), bg=CARD,
-                           fg=HILITE if color == "rainbow" else color, width=12, anchor="w")
-            lbl.pack(side="left")
-            if color == "rainbow":
-                self._rainbow_labels.append(lbl)
-            tk.Label(left, text=f"{fish['price']} Peli", font=TK_HINT, fg=MUTED, bg=CARD).pack(side="left", padx=6)
-            var = tk.StringVar(value=names.get(fish["id"]) or fish["name"])
+            info = fishdb.rarity_info(fish["rarity"])
+            if fish["id"].startswith("u"):
+                # Выученная рыба: редкость не знаем — пусть выберет пользователь
+                var_r = tk.StringVar(value=info["title"])
 
-            def changed(*_, fid=fish["id"], default=fish["name"], v=var):
+                def pick(title, fid=fish["id"]):
+                    fishdb.set_rarity(fid, rarity_titles[title])
+                    self.root.after(10, self._fill_catalog)
+                ctk.CTkOptionMenu(left, values=list(rarity_titles), variable=var_r, command=pick, width=118,
+                                  fg_color=FIELD, button_color=CARD_BORDER, button_hover_color=ACCENT,
+                                  font=(self.display, 12, "bold")).pack(side="left")
+            else:
+                color = info["color"]
+                lbl = tk.Label(left, text=italic_pad(info["title"].upper()), font=(self.display, 10, "bold", "italic"),
+                               bg=CARD, fg=HILITE if color == "rainbow" else color, width=12, anchor="w")
+                lbl.pack(side="left")
+                if color == "rainbow":
+                    self._rainbow_labels.append(lbl)
+            if fish.get("price"):
+                tk.Label(left, text=f"{fish['price']} Peli", font=TK_HINT, fg=MUTED, bg=CARD).pack(side="left", padx=6)
+            auto = fishdb.learned_name(fish["id"]) or fish["name"]
+            var = tk.StringVar(value=names.get(fish["id"]) or auto)
+
+            def changed(*_, fid=fish["id"], default=auto, v=var):
                 text = v.get().strip()
                 if text and text != default:
                     names[fid] = text
@@ -736,15 +769,13 @@ class App:
             var.trace_add("write", changed)
             ctk.CTkEntry(card, width=190, textvariable=var, fg_color=FIELD, border_color=CARD_BORDER).grid(
                 row=row, column=1, sticky="e", pady=3)
-        if self._rainbow_labels:
-            self._rainbow_phase = 0.0
-            self.root.after(120, self._animate_rainbow)
 
     def _animate_rainbow(self):
         """Легендарная редкость переливается: смена цвета пары надписей — нагрузки почти нет."""
         import colorsys
         try:
             self._rainbow_phase = (self._rainbow_phase + 0.04) % 1.0
+            self._rainbow_labels = [lbl for lbl in self._rainbow_labels if lbl.winfo_exists()]
             r, g, b = (int(c * 255) for c in colorsys.hsv_to_rgb(self._rainbow_phase, 0.7, 1.0))
             for lbl in self._rainbow_labels:
                 lbl.configure(fg=f"#{r:02x}{g:02x}{b:02x}")
@@ -771,6 +802,10 @@ class App:
             catch = log.add(rgb)
             name = log.name_of(catch)
             self.log_threadsafe(f"Поймано: {name} (×{catch.count})")
+            if catch.new:
+                self.log_threadsafe(f"🆕 Новая рыба в каталоге: {name} — выберите её редкость в «Рыбалка → Каталог рыб»")
+                self.events.put(("catalog", None))
+                self.tg.send(f"🆕 Новая рыба в каталоге: {name}", buttons=False)
             self.remote.poke()
             if self.cfg.get("catch_notify_each"):
                 from .catches import RARITY_EMOJI
@@ -789,16 +824,21 @@ class App:
             from . import fishdb, ocr
             from .catches import clean_name
             rgb = screen.grab(area)
-            fish, score = fishdb.match(rgb)
-            if fish:
-                self.log_threadsafe(f"Узнал рыбу: {fishdb.display_name(fish, self.cfg)} "
-                                    f"({fishdb.RARITIES[fish['rarity']]['title'].lower()}), сходство {score:.0%}")
-                return
             text = ocr.read_text(rgb)
+            name = clean_name(text)
             if not ocr.available():
-                self.log_threadsafe("Windows OCR недоступен — неизвестные рыбы будут группироваться по снимку")
-            self.log_threadsafe(f"Рыба не из каталога (сходство {score:.0%}). Текст: «{text.strip()}» → "
-                                f"«{clean_name(text) or 'не найдено'}»")
+                self.log_threadsafe("Windows OCR недоступен — названия не читаются, рыба узнаётся только по иконке")
+            self.log_threadsafe(f"Текст уведомления: «{text.strip()}» → название: «{name or 'не найдено'}»")
+            fish = fishdb.find_by_name(name, self.cfg) if name else None
+            how = "по названию"
+            if fish is None:
+                fish, score = fishdb.match(rgb)
+                how = f"по иконке, сходство {score:.0%}"
+            if fish:
+                title = fishdb.rarity_info(fish["rarity"])["title"].lower()
+                self.log_threadsafe(f"Узнал рыбу {how}: {fishdb.display_name(fish, self.cfg)} ({title})")
+            else:
+                self.log_threadsafe("Такой рыбы в каталоге нет — при поимке она добавится сама")
         threading.Thread(target=job, daemon=True).start()
 
     def _send_catches(self):
@@ -987,6 +1027,8 @@ class App:
                 elif kind == "click":
                     if self.blackout.active:
                         self._blackout_off(notify=True)
+                elif kind == "catalog":
+                    self._fill_catalog()
                 elif kind == "tg":
                     self._on_tg(payload)
         except queue.Empty:

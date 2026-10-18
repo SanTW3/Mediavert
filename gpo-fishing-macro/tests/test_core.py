@@ -6,7 +6,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -360,39 +360,111 @@ def test_clean_name():
     assert clean_name("   ") == ""
 
 
-def test_catch_log_uses_catalog_and_renders():
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def learned_store(tmp_path):
+    """Выученные рыбы — во временную папку, а не в папку проекта."""
     from macro import fishdb
-    from macro.catches import UNKNOWN, CatchLog
+    fishdb.set_store_dir(str(tmp_path / "fish_learned"))
+    yield
+    fishdb.set_store_dir(None)
 
-    def shot(fid, bg=(20, 30, 70), scale=1.0):
-        ic = fishdb.icon(fid)
-        ic = ic.resize((int(ic.width * scale), int(ic.height * scale)))
-        img = Image.new("RGB", (ic.width + 120, ic.height + 20), bg)
-        img.paste(ic, (10, 10), ic)
-        return np.asarray(img)
 
-    cfg = dict(config.DEFAULTS, fish_names={"04": "Мой легендарный"})
+def _shot(fid, bg=(20, 30, 70), scale=1.0, text=None):
+    from macro import fishdb
+    ic = fishdb.icon(fid)
+    ic = ic.resize((int(ic.width * scale), int(ic.height * scale)))
+    img = Image.new("RGB", (ic.width + 120, ic.height + 20), bg)
+    img.paste(ic, (10, 10), ic)
+    return np.asarray(img)
+
+
+def _new_fish_shot(color):
+    """Уведомление с рыбой, которой нет в каталоге."""
+    img = Image.new("RGB", (220, 70), (25, 30, 45))
+    d = ImageDraw.Draw(img)
+    d.ellipse([10, 15, 60, 55], fill=color)
+    d.polygon([(58, 35), (75, 20), (75, 50)], fill=color)
+    d.text((90, 28), "You caught", fill=(255, 255, 255))
+    return np.asarray(img)
+
+
+def test_catch_log_uses_catalog_and_renders():
+    from macro.catches import CatchLog
+    cfg = dict(config.DEFAULTS, fish_names={"04": "My Legend"})
     log = CatchLog(cfg, log=lambda t: None)
-    log.add(shot("04"))
-    log.add(shot("04", bg=(0, 0, 0), scale=1.3))
-    log.add(shot("07"))
-    noise = np.full((40, 160, 3), 128, np.uint8)
-    noise[10:30, 20:60] = (10, 250, 10)           # не похоже ни на одну рыбу каталога
-    log.add(noise, text="")
-    log.add(noise, text="")
+    log.add(_shot("04"), text="")
+    log.add(_shot("04", bg=(0, 0, 0), scale=1.3), text="")
+    log.add(_shot("07"), text="")
     by = {log.name_of(c): c for c in log.items}
-    assert by["Мой легендарный"].count == 2 and by["Мой легендарный"].rarity == "legendary"
-    assert by["Призрачная акула"].rarity == "epic"
-    assert by[UNKNOWN].count == 2 and by[UNKNOWN].rarity is None
-    assert log.total == 5
+    assert by["My Legend"].count == 2 and by["My Legend"].rarity == "legendary"
+    assert by["Ghost Shark"].rarity == "epic"
     text = log.summary_text()
-    assert text.splitlines()[2].startswith("🌈 Мой легендарный × 2")  # легендарные — первыми
+    assert text.splitlines()[2].startswith("🌈 My Legend × 2")      # легендарные — первыми
     data, kind = log.render()
     assert kind == "gif" and data[:3] == b"GIF"                      # радуга переливается
-    data, kind = log.render(rows=[by["Призрачная акула"]])
+    data, kind = log.render(rows=[by["Ghost Shark"]])
     assert kind == "png" and data[:4] == b"\x89PNG"
-    st = log.status()
-    assert st[0]["rarity"] == "legendary" and st[0]["id"] == "04"
+    assert log.status()[0]["rarity"] == "legendary" and log.status()[0]["id"] == "04"
+
+
+def test_names_come_from_game_notification():
+    from macro import fishdb
+    from macro.catches import CatchLog
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    # Иконка узнаётся, название берётся из уведомления и запоминается
+    c = log.add(_shot("06"), text="You caught a Pumpkin King!")
+    assert log.name_of(c) == "Pumpkin King" and not c.new
+    assert fishdb.learned_name("06") == "Pumpkin King"
+    # Дальше рыба узнаётся по названию
+    assert log.add(_shot("06", scale=0.8), text="You caught a Pumpkin King!") is c and c.count == 2
+    # Похоже на ту же иконку, но игра пишет другое название — это другая, новая рыба
+    other = log.add(_shot("06"), text="You caught a Pumpkin Queen!")
+    assert other is not c and other.new and log.name_of(other) == "Pumpkin Queen"
+
+
+def test_unknown_fish_are_added_to_catalog():
+    from macro import fishdb
+    from macro.catches import CatchLog
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    eel = _new_fish_shot((40, 220, 90))
+    c = log.add(eel, text="You caught a Mystery Eel!")
+    assert c.new and c.fish_id.startswith("u") and log.name_of(c) == "Mystery Eel"
+    assert c.rarity is None                                           # редкость выберет пользователь
+    # Повторная поимка — уже из каталога: по названию и даже без него (по иконке)
+    assert log.add(eel, text="You caught a Mystery Eel!") is c
+    assert log.add(eel, text="") is c and c.count == 3 and not c.new
+    # Без названия новая рыба тоже записывается
+    blob = log.add(_new_fish_shot((250, 40, 200)), text="")
+    assert blob.new and log.name_of(blob).startswith("Unknown Fish")
+    # Каталог переживает перезапуск
+    fishdb.set_store_dir(fishdb.store_dir())
+    assert fishdb.by_id(c.fish_id)["name"] == "Mystery Eel"
+    fishdb.set_rarity(c.fish_id, "epic")
+    assert fishdb.by_id(c.fish_id)["rarity"] == "epic"
+    assert "🟣 Mystery Eel × 3" in log.summary_text()
+
+
+def test_skip_first_bait_purchase(monkeypatch):
+    from macro import engine as eng
+    for skip, expect_buy in ((False, True), (True, False)):
+        keys = []
+        monkeypatch.setattr(eng.winput, "press_key", lambda k: keys.append(k))
+        monkeypatch.setattr(eng.winput, "click", lambda x, y: None)
+        monkeypatch.setattr(eng.winput, "type_text", lambda t: None)
+        monkeypatch.setattr(eng.screen, "grab_monitor", lambda: np.full((10, 10, 3), 100, np.uint8))
+        fast = {k: 0.0 for k in ("buy_e_delay", "buy_click_delay", "buy_type_delay", "rod_select_delay")}
+        cfg = dict(config.DEFAULTS, **fast, auto_buy_bait=True, buy_left=[1, 1], buy_middle=[2, 2],
+                   buy_right=[3, 3], loops_per_purchase=5, buy_skip_first=skip, wd_check_window=False)
+        e = eng.MacroEngine(cfg, log=lambda t: None)
+        e._pre_cast()
+        assert ("e" in keys) == expect_buy
+        e.stats["loops"] = 5                                           # через «циклов на покупку» — покупает
+        keys.clear()
+        e._pre_cast()
+        assert "e" in keys
 
 
 def test_catalog_recognizes_inventory_icons():

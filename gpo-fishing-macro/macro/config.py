@@ -35,6 +35,7 @@ DEFAULTS = {
     "buy_right": None,
     "loops_per_purchase": 100,
     "buy_type_amount": True,
+    "buy_skip_first": False,
     "auto_store_fruit": False,
     "fruit_hotkey": "3",
     "store_point": None,

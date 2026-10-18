@@ -32,7 +32,8 @@ class Preview(tk.Toplevel):
         rgb = screen.grab(area)
         return rgb, detect(rgb, cfg["zone_color"], int(cfg["zone_tolerance"]),
                            int(cfg["fish_white_min"]), int(cfg["min_zone_pixels"]),
-                           cfg["bar_mode"], int(cfg["dark_max"]), float(cfg["gap_mult"]))
+                           cfg["bar_mode"], int(cfg["dark_max"]), float(cfg["gap_mult"]),
+                           cfg["progress_color"], bool(cfg["require_progress"]))
 
     def _tick(self):
         if not self.winfo_exists():

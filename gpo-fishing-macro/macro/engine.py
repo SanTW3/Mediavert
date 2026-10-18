@@ -61,6 +61,7 @@ class MacroEngine:
         self._thread = None
         self._mouse_held = False
         self._mouse_sent = 0.0
+        self._in_minigame = False  # в мини-игре рыбу можно на кадр потерять — не требуем её
         self.last_detection = None
         self.stats = {"casts": 0, "catches": 0, "loops": 0, "started": None}
 
@@ -196,7 +197,9 @@ class MacroEngine:
         rgb = screen.grab(cfg["area"])
         det = detect(rgb, cfg["zone_color"], int(cfg["zone_tolerance"]),
                      int(cfg["fish_white_min"]), int(cfg["min_zone_pixels"]),
-                     cfg["bar_mode"], int(cfg["dark_max"]), float(cfg["gap_mult"]))
+                     cfg["bar_mode"], int(cfg["dark_max"]), float(cfg["gap_mult"]),
+                     cfg["progress_color"], bool(cfg["require_progress"]),
+                     require_fish=not self._in_minigame)
         self.last_detection = (rgb, det)
         return det
 
@@ -304,6 +307,7 @@ class MacroEngine:
         ctrl = PDController(float(cfg["kp"]), float(cfg["kd"]), float(cfg["pd_clamp"]),
                             float(cfg["approach_damping"]), float(cfg["chase_damping"]))
         resend = float(cfg["resend_interval"])
+        self._in_minigame = True
         frame = 1.0 / max(int(cfg["scan_fps"]), 5)
         last_fish = None
         lost_since = None
@@ -330,6 +334,7 @@ class MacroEngine:
                 self._stop.wait(max(frame - spent, 0.001))
             self.log("Мини-игра длится больше 3 минут — сбрасываю")
         finally:
+            self._in_minigame = False
             self._set_mouse(False)
 
     def _post_catch(self):

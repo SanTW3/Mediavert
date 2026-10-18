@@ -64,8 +64,18 @@ def test_detect_nothing():
     junk[10:60, 30:42] = (85, 170, 255)
     junk[20:40, 30:42] = (26, 26, 28)
     assert detect(junk) is None
-    det = detect(synthetic(fish=None))
+    # Без белой черты рыбы мини-игру не начинаем, но внутри мини-игры рыбу можно потерять на кадр
+    assert detect(synthetic(fish=None)) is None
+    det = detect(synthetic(fish=None), require_fish=False)
     assert det is not None and det.fish_y is None
+
+
+def test_detect_rejects_blue_glow_without_progress_bar():
+    # Как на превью из игры: синее свечение у края области, без зелёной полосы прогресса
+    img = synthetic()
+    img[:, 60:66] = (60, 30, 20)  # убрали зелёную полосу
+    assert detect(img) is None
+    assert detect(img, require_progress=False) is not None
 
 
 def test_pd_holds_when_fish_above():

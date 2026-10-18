@@ -72,6 +72,8 @@ DEFAULTS = {
     "resend_interval": 0.5,
     "bar_mode": "dark",
     "dark_max": 60,
+    "progress_color": [173, 254, 128],
+    "require_progress": True,
 
     # Phone alarm
     "alarm_enabled": True,

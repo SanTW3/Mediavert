@@ -37,6 +37,12 @@ ORANGE = "#d29922"
 STATUS_COLORS = {"red": RED, "green": GREEN, "blue": ACCENT, "orange": ORANGE}
 
 FONT = "Segoe UI"
+# Подписи внутри карточек — обычные tk.Label со сплошным фоном: прозрачные CTkLabel
+# в прокручиваемой области не успевают перерисоваться и оставляют «следы» при быстрой прокрутке
+TK_TITLE = (FONT, 11, "bold")
+TK_SUB = (FONT, 8)
+TK_LABEL = (FONT, 10)
+TK_HINT = (FONT, 8)
 
 
 def key_name(key):
@@ -134,11 +140,11 @@ class App:
     def _card(self, parent, title, subtitle=None):
         card = ctk.CTkFrame(parent, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=12)
         card.pack(fill="x", pady=(0, 10), padx=2)
-        ctk.CTkLabel(card, text=title, font=(FONT, 14, "bold"), text_color=TEXT).pack(
+        tk.Label(card, text=title, font=TK_TITLE, fg=TEXT, bg=CARD).pack(
             anchor="w", padx=16, pady=(12, 0 if subtitle else 6))
         if subtitle:
-            ctk.CTkLabel(card, text=subtitle, font=(FONT, 11), text_color=MUTED).pack(anchor="w", padx=16, pady=(0, 6))
-        body = ctk.CTkFrame(card, fg_color="transparent")
+            tk.Label(card, text=subtitle, font=TK_SUB, fg=MUTED, bg=CARD).pack(anchor="w", padx=16, pady=(0, 6))
+        body = tk.Frame(card, bg=CARD)
         body.pack(fill="x", padx=16, pady=(0, 12))
         body.columnconfigure(0, weight=1)
         return body
@@ -147,23 +153,23 @@ class App:
         return body.grid_size()[1]
 
     def _label(self, body, row, text, hint=None):
-        box = ctk.CTkFrame(body, fg_color="transparent")
+        box = tk.Frame(body, bg=CARD)
         box.grid(row=row, column=0, sticky="w", pady=4)
-        ctk.CTkLabel(box, text=text, font=(FONT, 13), text_color=TEXT, anchor="w").pack(anchor="w")
+        tk.Label(box, text=text, font=TK_LABEL, fg=TEXT, bg=CARD, anchor="w").pack(anchor="w")
         if hint:
-            ctk.CTkLabel(box, text=hint, font=(FONT, 11), text_color=MUTED, anchor="w",
-                         justify="left", wraplength=360).pack(anchor="w")
+            tk.Label(box, text=hint, font=TK_HINT, fg=MUTED, bg=CARD, anchor="w",
+                     justify="left", wraplength=340).pack(anchor="w")
         return box
 
     def _num(self, body, text, key, hint=None, kind=float, unit=None, width=90):
         row = self._row(body)
         self._label(body, row, text, hint)
-        right = ctk.CTkFrame(body, fg_color="transparent")
+        right = tk.Frame(body, bg=CARD)
         right.grid(row=row, column=1, sticky="e", pady=4)
         ctk.CTkEntry(right, width=width, textvariable=self.var(key, kind), fg_color=FIELD,
                      border_color=CARD_BORDER, justify="center").pack(side="left")
         if unit:
-            ctk.CTkLabel(right, text=unit, text_color=MUTED, width=28).pack(side="left", padx=(6, 0))
+            tk.Label(right, text=unit, font=TK_LABEL, fg=MUTED, bg=CARD, width=3).pack(side="left", padx=(6, 0))
 
     def _text(self, body, text, key, hint=None, secret=False):
         row = self._row(body)
@@ -188,23 +194,23 @@ class App:
 
     def _point(self, body, button, key, hint):
         row = self._row(body)
-        lbl = ctk.CTkLabel(body, text=fmt_point(self.cfg.get(key)), font=(FONT, 12),
-                           text_color=GREEN if self.cfg.get(key) else MUTED)
+        lbl = tk.Label(body, text=fmt_point(self.cfg.get(key)), font=TK_LABEL, bg=CARD,
+                       fg=GREEN if self.cfg.get(key) else MUTED)
 
         def pick():
             def done(point):
                 self.cfg[key] = point
-                lbl.configure(text=fmt_point(point), text_color=GREEN)
+                lbl.configure(text=fmt_point(point), fg=GREEN)
                 self._save()
             self._open_overlay(lambda: PointPicker(self.root, hint, done))
 
-        ctk.CTkButton(body, text="⌖  " + button, width=170, height=32, fg_color=FIELD, hover_color=ACCENT,
+        ctk.CTkButton(body, text=button, width=170, height=32, fg_color=FIELD, hover_color=ACCENT,
                       border_color=CARD_BORDER, border_width=1, anchor="w", command=pick).grid(
             row=row, column=0, sticky="w", pady=4)
         lbl.grid(row=row, column=1, sticky="e", pady=4)
 
     def _buttons(self, body, *buttons):
-        row = ctk.CTkFrame(body, fg_color="transparent")
+        row = tk.Frame(body, bg=CARD)
         row.grid(row=self._row(body), column=0, columnspan=2, sticky="w", pady=(8, 2))
         for text, command, color, hover in buttons:
             ctk.CTkButton(row, text=text, command=command, width=130, height=32, fg_color=color,
@@ -223,7 +229,13 @@ class App:
         header.pack(fill="x", padx=18, pady=(16, 8))
         title_box = ctk.CTkFrame(header, fg_color="transparent")
         title_box.pack(side="left")
-        ctk.CTkLabel(title_box, text="🎣  GPO Fishing Macro", font=(FONT, 22, "bold"), text_color=TEXT).pack(anchor="w")
+        try:
+            from PIL import Image
+            self._logo = ctk.CTkImage(Image.open(resource("icon.png")), size=(30, 30))
+        except Exception:
+            self._logo = None
+        ctk.CTkLabel(title_box, text="  GPO Fishing Macro", image=self._logo, compound="left",
+                     font=(FONT, 22, "bold"), text_color=TEXT).pack(anchor="w")
         self.status = ctk.CTkLabel(title_box, text="  ●  Stopped  ", font=(FONT, 12, "bold"), text_color="white",
                                    fg_color=RED, corner_radius=10, height=24)
         self.status.pack(anchor="w", pady=(6, 0))
@@ -267,7 +279,7 @@ class App:
                            ("Exit", "hotkey_exit")):
             row = self._row(hk)
             self._label(hk, row, label)
-            right = ctk.CTkFrame(hk, fg_color="transparent")
+            right = tk.Frame(hk, bg=CARD)
             right.grid(row=row, column=1, sticky="e", pady=4)
             cap = ctk.CTkLabel(right, text=self.cfg[key].upper(), width=56, height=30, corner_radius=8,
                                fg_color=FIELD, text_color=ACCENT, font=(FONT, 13, "bold"))
@@ -310,7 +322,7 @@ class App:
 
         def section(flag_key, title, hint, build):
             card = self._card(page, title, hint)
-            settings = ctk.CTkFrame(card, fg_color="transparent")
+            settings = tk.Frame(card, bg=CARD)
             settings.columnconfigure(0, weight=1)
             build(settings)
 
@@ -324,8 +336,8 @@ class App:
             toggle()
 
         def buy(f):
-            ctk.CTkLabel(f, text="Order: E → Left → Middle → amount → Left → Right → Middle",
-                         font=(FONT, 11), text_color=MUTED).grid(row=self._row(f), column=0, columnspan=2,
+            tk.Label(f, text="Order: E → Left → Middle → amount → Left → Right → Middle",
+                     font=TK_HINT, fg=MUTED, bg=CARD).grid(row=self._row(f), column=0, columnspan=2,
                                                                  sticky="w", pady=(0, 4))
             self._point(f, "Set Left Point", "buy_left", "Кликните по левой кнопке покупки")
             self._point(f, "Set Middle Point", "buy_middle", "Кликните по средней кнопке покупки")
@@ -350,8 +362,28 @@ class App:
         warn.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(warn, text="⚠  DON'T CHANGE IF YOU DON'T KNOW WHAT YOU'RE DOING",
                      font=(FONT, 13, "bold"), text_color="#ff7b72").pack(padx=12, pady=8)
-        page = self._scroll(tab)
+        # Подразделы: в каждом немного карточек — прокрутка короче и не тормозит
+        groups = ["Delays", "Anti-Macro & PD", "Phone Alarm", "Detection", "Log"]
+        pages = {}
+        holder = ctk.CTkFrame(tab, fg_color="transparent")
 
+        def show(name):
+            for n, p in pages.items():
+                if n == name:
+                    p.pack(fill="both", expand=True)
+                else:
+                    p.pack_forget()
+
+        nav = ctk.CTkSegmentedButton(tab, values=groups, command=show, fg_color=CARD,
+                                     selected_color=ACCENT, selected_hover_color=ACCENT_HOVER,
+                                     unselected_color=CARD, unselected_hover_color=FIELD)
+        nav.pack(fill="x", pady=(0, 8))
+        holder.pack(fill="both", expand=True)
+        for name in groups:
+            pages[name] = ctk.CTkScrollableFrame(holder, fg_color="transparent",
+                                                 scrollbar_button_color=CARD_BORDER)
+
+        page = pages["Delays"]
         f = self._card(page, "Roblox Window Focus")
         self._num(f, "Roblox Focus Delay (s)", "focus_delay",
                   "Time to wait after focusing Roblox window before continuing")
@@ -374,7 +406,7 @@ class App:
         f = self._card(page, "Auto Select Top Bait Delays")
         self._num(f, "Bait Click Delay (s)", "bait_click_delay", "Wait time after clicking bait point")
 
-        f = self._card(page, "Anti-Macro Black Screen Detection")
+        f = self._card(pages["Anti-Macro & PD"], "Anti-Macro Black Screen Detection")
         self._num(f, "Black Screen Threshold (%)", "black_threshold",
                   "% of screen that must be black to trigger (0.5 = 50%)")
         self._num(f, "Key Spam Delay (s)", "black_spam_delay",
@@ -391,6 +423,7 @@ class App:
         self._num(f, "Color Scan Loop Delay (s)", "scan_loop_delay",
                   "Delay between each color scan iteration (lower = faster but more CPU)")
 
+        page = pages["Anti-Macro & PD"]
         f = self._card(page, "PD Control Damping (Advanced)")
         self._num(f, "Approaching Damping Multiplier", "approach_damping",
                   "Damping strength when bar is moving TOWARD target (higher = stronger brake)")
@@ -403,8 +436,9 @@ class App:
         self._num(f, "State Resend Interval (s)", "resend_interval",
                   "Resend mouse input every X seconds if in same state (prevents game desync)")
 
-        al = self._card(page, "📱  Phone Alarm", "Rings your phone when something goes wrong")
-        self._switch(al, "Ring my phone if something goes wrong", "alarm_enabled")
+        page = pages["Phone Alarm"]
+        al = self._card(page, "Phone Alarm", "Rings your phone when something goes wrong")
+        self._switch(al, "Ring my phone", "alarm_enabled", "When something goes wrong (see Watchdog)")
         self._text(al, "ntfy server", "ntfy_server")
         self._text(al, "ntfy topic", "ntfy_topic", "Same topic as in the ntfy app")
         self._text(al, "Telegram bot token", "telegram_token", secret=True)
@@ -414,8 +448,8 @@ class App:
         self._num(al, "Repeat Alarm Every (s)", "alarm_repeat_sec",
                   "Repeat until you press Stop Alarm or Start (0 = once)")
         self._switch(al, "Attach screenshot (Telegram)", "alarm_screenshot")
-        self._buttons(al, ("🔔  Test Alarm", self._test_alarm, ACCENT, ACCENT_HOVER),
-                      ("🔕  Stop Alarm", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
+        self._buttons(al, ("Test Alarm", self._test_alarm, ACCENT, ACCENT_HOVER),
+                      ("Stop Alarm", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
 
         wd = self._card(page, "Watchdog", "When to ring")
         self._num(wd, "Failed Casts In A Row", "wd_failed_casts",
@@ -426,10 +460,11 @@ class App:
         self._switch(wd, "Watch Roblox window", "wd_check_window")
         self._switch(wd, "Stop macro on alarm", "wd_stop_on_alarm")
 
+        page = pages["Detection"]
         dt = self._card(page, "Minigame Detection")
         row = self._row(dt)
         self._label(dt, row, "Track color (blue)", "Click the blue track of the minigame to re-pick it")
-        right = ctk.CTkFrame(dt, fg_color="transparent")
+        right = tk.Frame(dt, bg=CARD)
         right.grid(row=row, column=1, sticky="e", pady=4)
         self.color_swatch = ctk.CTkLabel(right, text="", width=70, height=28, corner_radius=6)
         self.color_swatch.pack(side="left", padx=(0, 6))
@@ -441,20 +476,24 @@ class App:
                   kind=int)
         self._option(dt, "Player Bar Is", "bar_mode", ["dark", "blue"],
                      "dark = dark gray bar on blue track (default), blue = the opposite")
+        self._switch(dt, "Require green progress bar", "require_progress",
+                     "Minigame counts only if the green bar is next to the track (stops false M1 spam)")
         self._num(dt, "Fish Line Brightness", "fish_white_min", "Min brightness of the white fish line (0-255)",
                   kind=int)
         self._num(dt, "Min Track Pixels", "min_zone_pixels", "Fewer blue pixels = no minigame on screen", kind=int)
         self._num(dt, "Minigame Scan Rate (FPS)", "scan_fps", "Screen checks per second while reeling", kind=int)
-        self.area_label = ctk.CTkLabel(dt, text=self._area_text(), font=(FONT, 12),
-                                       text_color=GREEN if self.cfg["area"] else MUTED)
+        self.area_label = tk.Label(dt, text=self._area_text(), font=TK_LABEL, bg=CARD,
+                                   fg=GREEN if self.cfg["area"] else MUTED)
         self.area_label.grid(row=self._row(dt), column=0, columnspan=2, sticky="w", pady=(6, 0))
-        self._buttons(dt, ("▣  Change Area", self.change_area, ACCENT, ACCENT_HOVER),
-                      ("🔍  Debug Preview", self._open_preview, FIELD, CARD_BORDER))
+        self._buttons(dt, ("Change Area", self.change_area, ACCENT, ACCENT_HOVER),
+                      ("Debug Preview", self._open_preview, FIELD, CARD_BORDER))
 
-        lg = self._card(page, "Log")
-        self.log_box = ctk.CTkTextbox(lg, height=170, fg_color=FIELD, font=("Consolas", 11), wrap="word",
+        lg = self._card(pages["Log"], "Log")
+        self.log_box = ctk.CTkTextbox(lg, height=330, fg_color=FIELD, font=("Consolas", 11), wrap="word",
                                       state="disabled")
         self.log_box.grid(row=0, column=0, columnspan=2, sticky="ew")
+        nav.set("Delays")
+        show("Delays")
 
     # ---------- действия ----------
     def _apply_topmost(self):
@@ -489,7 +528,7 @@ class App:
 
         def done(area):
             self.cfg["area"] = area
-            self.area_label.configure(text=self._area_text(), text_color=GREEN)
+            self.area_label.configure(text=self._area_text(), fg=GREEN)
             self._save()
             self.log(f"Область мини-игры: {area}")
         self._open_overlay(lambda: AreaSelector(self.root, self.cfg["area"], done))

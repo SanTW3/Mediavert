@@ -53,10 +53,14 @@ def _longest_run(mask_1d, max_gap):
 
 
 def detect(rgb, zone_color=(85, 170, 255), tolerance=40, white_min=200, min_zone_pixels=30,
-           bar_mode="dark", dark_max=60, gap_mult=2.0):
+           bar_mode="dark", dark_max=60, gap_mult=2.0,
+           progress_color=(173, 254, 128), require_progress=True, require_fish=True):
     """rgb — массив HxWx3 (uint8). Возвращает Detection или None, если мини-игры нет.
 
     zone_color — цвет синего трека: по нему находим колонки полосы и понимаем, что мини-игра идёт.
+    require_progress — мини-игра считается найденной, только если правее трека есть зелёная
+    полоса прогресса progress_color; require_fish — только если найдена белая черта рыбы.
+    Без этих проверок синее свечение, вода или вещи с синим оттенком дают ложные срабатывания.
     dark_max — максимальная яркость «тёмно-серых» пикселей полосы игрока.
     gap_mult — Gap Tolerance Multiplier: разрывы в тёмно-серой полосе до white_height * gap_mult
     склеиваются (их создаёт белая черта рыбы поверх полосы).
@@ -80,6 +84,9 @@ def detect(rgb, zone_color=(85, 170, 255), tolerance=40, white_min=200, min_zone
         return None
     cols = img[:, x0:x1 + 1]
     blue_rows = blue_mask[:, x0:x1 + 1].mean(axis=1) >= 0.5
+    # У настоящего трека синий ровный и сплошной, а не пятно на пару строк
+    if blue_rows.sum() < h * 0.12:
+        return None
 
     # Белая черта: почти белые пиксели в колонках полосы (с небольшим запасом по краям)
     pad = 2
@@ -92,6 +99,17 @@ def detect(rgb, zone_color=(85, 170, 255), tolerance=40, white_min=200, min_zone
     if wrun:
         fish_y = (wrun[0] + wrun[1]) / 2
         white_height = wrun[1] - wrun[0] + 1
+    if require_fish and fish_y is None:
+        return None
+
+    if require_progress:
+        # Зелёная полоса прогресса — справа от трека, вертикальная
+        right = img[:, x1 + 1:]
+        if right.shape[1] == 0:
+            return None
+        green = np.abs(right - np.array(progress_color, dtype=np.int16)).max(axis=2) <= tolerance
+        if green.sum(axis=0).max() < max(h * 0.08, 4):
+            return None
     # Сглаженные края черты дают серые строки сверху и снизу — тоже считаем их частью черты
     near_white = img[:, x0:x1 + 1].min(axis=2).mean(axis=1) >= 60
 

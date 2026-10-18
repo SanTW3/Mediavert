@@ -31,6 +31,7 @@ DEFAULTS = {
     "auto_buy_bait": False,
     "buy_left": None,
     "buy_middle": None,
+    "buy_right": None,
     "loops_per_purchase": 100,
     "buy_type_amount": True,
     "auto_store_fruit": False,

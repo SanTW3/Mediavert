@@ -222,7 +222,7 @@ def test_engine_full_loop(monkeypatch):
                              "fruit_backspace_delay", "bait_click_delay", "rod_select_delay", "cursor_delay",
                              "fish_end_delay", "cast_hold")}
     cfg = dict(config.DEFAULTS, **fast, area=[0, 0, 80, 300], water_point=[500, 400], scan_loop_delay=0.001,
-               scan_fps=240, auto_buy_bait=True, buy_left=[1, 1], buy_middle=[2, 2],
+               scan_fps=240, auto_buy_bait=True, buy_left=[1, 1], buy_middle=[2, 2], buy_right=[3, 3],
                loops_per_purchase=5, auto_store_fruit=True, store_point=[9, 9], wd_check_window=False,
                alarm_enabled=False)
     e = eng.MacroEngine(cfg, log=lambda t: None)
@@ -236,8 +236,8 @@ def test_engine_full_loop(monkeypatch):
     keys = [a[1] for a in actions if a[0] == "key"]
     assert keys[:3] == ["2", "e", "2"] and "7" in keys and "backspace" in keys
     assert ("type", "5") in actions and ("click", (9, 9)) in actions
-    # Покупка: E → левый → средний → число → левый → средний
+    # Покупка: E → левый → средний → число → левый → правый → средний
     i = actions.index(("key", "e"))
-    assert actions[i + 1:i + 6] == [("click", (1, 1)), ("click", (2, 2)), ("type", "5"),
-                                    ("click", (1, 1)), ("click", (2, 2))]
+    assert actions[i + 1:i + 7] == [("click", (1, 1)), ("click", (2, 2)), ("type", "5"),
+                                    ("click", (1, 1)), ("click", (3, 3)), ("click", (2, 2))]
     assert actions.count(("down",)) == actions.count(("up",))  # мышь никогда не остаётся зажатой

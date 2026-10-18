@@ -324,11 +324,12 @@ class App:
             toggle()
 
         def buy(f):
-            ctk.CTkLabel(f, text="Order: E → Left → Middle → type amount → Left → Middle",
+            ctk.CTkLabel(f, text="Order: E → Left → Middle → amount → Left → Right → Middle",
                          font=(FONT, 11), text_color=MUTED).grid(row=self._row(f), column=0, columnspan=2,
                                                                  sticky="w", pady=(0, 4))
             self._point(f, "Set Left Point", "buy_left", "Кликните по левой кнопке покупки")
             self._point(f, "Set Middle Point", "buy_middle", "Кликните по средней кнопке покупки")
+            self._point(f, "Set Right Point", "buy_right", "Кликните по правой кнопке покупки")
             self._num(f, "Loops Per Purchase", "loops_per_purchase", "Buy bait every N loops", kind=int)
             self._switch(f, "Type bait amount", "buy_type_amount", "Types Loops Per Purchase after the first Middle click")
 

@@ -22,16 +22,33 @@ class _Overlay(tk.Toplevel):
         self.configure(bg="black", cursor="crosshair")
         self.canvas = tk.Canvas(self, bg="black", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
-        self.canvas.create_text(vw // 2, 40, text=hint + "   (Esc — отмена)",
+        # Подсказка — по центру основного монитора, а не на стыке двух
+        self.canvas.create_text(-self.vx + root.winfo_screenwidth() // 2, 40,
+                                text=hint + "   (Esc или правый клик — отмена)",
                                 fill="white", font=("Segoe UI", 16, "bold"))
-        self.bind("<Escape>", lambda e: self.finish(None))
-        self.focus_force()
-        self.grab_set()
+        # Esc ловим и здесь, и глобально в gui.py: окну без рамки Windows часто не даёт фокус
+        self.bind("<Escape>", lambda e: self.cancel())
+        self.canvas.bind("<Escape>", lambda e: self.cancel())
+        self.canvas.bind("<ButtonPress-3>", lambda e: self.cancel())
         self.result = None
+        self.closed = False
+        self.after(30, self._grab_focus)
+
+    def _grab_focus(self):
+        if self.closed:
+            return
+        self.lift()
+        self.focus_force()
+        self.canvas.focus_set()
+
+    def cancel(self):
+        self.finish(None)
 
     def finish(self, result):
+        if self.closed:
+            return
+        self.closed = True
         self.result = result
-        self.grab_release()
         self.destroy()
 
 

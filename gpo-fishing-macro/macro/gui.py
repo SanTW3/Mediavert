@@ -82,6 +82,7 @@ class App:
         self._save_job = None
         self._rebinding = None
         self._preview = None
+        self._overlay = None
         self._stats = {}
         self._was_running = None
 
@@ -195,7 +196,7 @@ class App:
                 self.cfg[key] = point
                 lbl.configure(text=fmt_point(point), text_color=GREEN)
                 self._save()
-            PointPicker(self.root, hint, done)
+            self._open_overlay(lambda: PointPicker(self.root, hint, done))
 
         ctk.CTkButton(body, text="⌖  " + button, width=170, height=32, fg_color=FIELD, hover_color=ACCENT,
                       border_color=CARD_BORDER, border_width=1, anchor="w", command=pick).grid(
@@ -462,7 +463,25 @@ class App:
         a = self.cfg["area"]
         return f"Area: X {a[0]}, Y {a[1]}, {a[2]}×{a[3]}" if a else "Area: not set (press F2 during a minigame)"
 
+    def _overlay_open(self):
+        return self._overlay is not None and not self._overlay.closed
+
+    def _close_overlay(self):
+        if self._overlay_open():
+            self._overlay.cancel()
+        self._overlay = None
+
+    def _open_overlay(self, factory):
+        """Только один оверлей за раз: повторный вызов закрывает открытый."""
+        if self._overlay_open():
+            self._close_overlay()
+            return
+        self._overlay = factory()
+
     def change_area(self):
+        if self._overlay_open():  # повторный F2 — закрыть выбор
+            self._close_overlay()
+            return
         if self.engine.running:
             self.log("Сначала остановите макрос")
             return
@@ -472,7 +491,7 @@ class App:
             self.area_label.configure(text=self._area_text(), text_color=GREEN)
             self._save()
             self.log(f"Область мини-игры: {area}")
-        AreaSelector(self.root, self.cfg["area"], done)
+        self._open_overlay(lambda: AreaSelector(self.root, self.cfg["area"], done))
 
     def _pick_color(self):
         def done(point):
@@ -483,7 +502,7 @@ class App:
                 self._save()
                 self.log(f"Цвет трека: {self.cfg['zone_color']}")
             self.root.after(150, grab)  # ждём, пока оверлей исчезнет
-        PointPicker(self.root, "Кликните по синему треку мини-игры", done)
+        self._open_overlay(lambda: PointPicker(self.root, "Кликните по синему треку мини-игры", done))
 
     def _update_swatch(self):
         r, g, b = self.cfg["zone_color"]
@@ -558,6 +577,13 @@ class App:
             self.hotkey_labels[key].configure(text=name.upper(), text_color=ACCENT)
             self._refresh_hotkey_hint()
             self._save()
+            return
+        if self._overlay_open():
+            # Пока открыт выбор области/точки — только отмена, остальные горячие клавиши молчат
+            if name == "esc":
+                self._close_overlay()
+            elif name == self.cfg["hotkey_change_area"]:
+                self.change_area()
             return
         if name == self.cfg["hotkey_start_stop"]:
             self.engine.toggle()

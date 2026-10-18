@@ -8,6 +8,10 @@ from .detector import black_fraction, detect
 from .watchdog import Watchdog
 
 
+CATCH_FRAMES = 4         # снимков уведомления о рыбе
+CATCH_FRAME_GAP = 0.35   # с
+
+
 class _Stopped(Exception):
     pass
 
@@ -349,13 +353,23 @@ class MacroEngine:
         if not (cfg.get("catch_log_enabled") and area and self.on_catch):
             self._sleep(end_delay)
             return
+        # Уведомление «New Item <рыба>» появляется не сразу и гаснет — несколько снимков подряд,
+        # распознавание потом возьмёт первый, где оно есть
         capture = max(float(cfg["catch_capture_delay"]), 0.0)
         self._sleep(capture)
-        try:
-            self.on_catch(screen.grab(area))
-        except Exception as exc:
-            self.log(f"Не удалось снять уведомление о рыбе: {exc}")
-        self._sleep(max(end_delay - capture, 0.0))
+        frames, spent = [], capture
+        for i in range(CATCH_FRAMES):
+            try:
+                frames.append(screen.grab(area))
+            except Exception as exc:
+                self.log(f"Не удалось снять уведомление о рыбе: {exc}")
+                break
+            if i < CATCH_FRAMES - 1:
+                self._sleep(CATCH_FRAME_GAP)
+                spent += CATCH_FRAME_GAP
+        if frames:
+            self.on_catch(frames)
+        self._sleep(max(end_delay - spent, 0.0))
 
     def _post_catch(self):
         cfg = self.cfg

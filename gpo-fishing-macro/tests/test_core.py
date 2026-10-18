@@ -355,7 +355,7 @@ def test_remote_publishes_status_and_takes_commands():
 
 def test_clean_name():
     from macro.catches import clean_name
-    assert clean_name("You caught a Golden Carp! x1") == "Golden Carp"
+    assert clean_name("You caught a Golden Carp! x1") == "Golden Carp"  # запасной разбор свободного текста
     assert clean_name("+1 Salmon") == "Salmon"
     assert clean_name("   ") == ""
 
@@ -391,60 +391,106 @@ def _new_fish_shot(color):
     return np.asarray(img)
 
 
+def _notice(name, color=(80, 220, 255), bg=(40, 110, 190), width=320):
+    """Картинка уведомления «New Item <name>»: белый текст, название цветом редкости, тёмная обводка."""
+    from macro.theme import _font
+    img = Image.new("RGB", (width, 40), bg)
+    d = ImageDraw.Draw(img)
+    font = _font(20)
+    d.text((8, 8), "New Item", font=font, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+    d.text((110, 8), f"<{name}>", font=font, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
+    words = [("New", (8, 8, 40, 24)), ("Item", (52, 8, 50, 24)), (f"<{name}>", (110, 8, width - 115, 24))]
+    return np.asarray(img), [{"text": f"New Item <{name}>", "words": words}]
+
+
 def test_catch_log_uses_catalog_and_renders():
     from macro.catches import CatchLog
     cfg = dict(config.DEFAULTS, fish_names={"04": "My Legend"})
     log = CatchLog(cfg, log=lambda t: None)
-    log.add(_shot("04"), text="")
-    log.add(_shot("04", bg=(0, 0, 0), scale=1.3), text="")
-    log.add(_shot("07"), text="")
+    rgb, lines = _notice("My Legend")
+    log.add(rgb, lines=lines)
+    log.add(rgb, text="New Item <My Legend>")
+    log.add(rgb, text="New Item <Ghost Shark>")
     by = {log.name_of(c): c for c in log.items}
-    assert by["My Legend"].count == 2 and by["My Legend"].rarity == "legendary"
+    assert by["My Legend"].count == 2 and by["My Legend"].rarity == "legendary" and by["My Legend"].fish_id == "04"
     assert by["Ghost Shark"].rarity == "epic"
-    text = log.summary_text()
-    assert text.splitlines()[2].startswith("🌈 My Legend × 2")      # легендарные — первыми
+    assert log.summary_text().splitlines()[2].startswith("🌈 My Legend × 2")   # легендарные — первыми
     data, kind = log.render()
-    assert kind == "gif" and data[:3] == b"GIF"                      # радуга переливается
+    assert kind == "gif" and data[:3] == b"GIF"                              # радуга переливается
     data, kind = log.render(rows=[by["Ghost Shark"]])
     assert kind == "png" and data[:4] == b"\x89PNG"
     assert log.status()[0]["rarity"] == "legendary" and log.status()[0]["id"] == "04"
 
 
-def test_names_come_from_game_notification():
+def test_only_new_item_notifications_count():
+    from macro.catches import CatchLog, parse_name
+    for text in ("SAFE ZONE PROTECTED", "ISLAND OF ZOU 2253 STUDS", "Fisherman", "Common Fish Bait x93", ""):
+        assert parse_name(text) is None
+    assert parse_name("New Item <Fangfish>") == "Fangfish"
+    assert parse_name("New ltem (Fangfish)") == "Fangfish"        # OCR путает скобки и «I»
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    assert log.add(np.zeros((40, 200, 3), np.uint8), text="SAFE ZONE PROTECTED") is None
+    assert log.items == []
+    # Из нескольких снимков берётся первый с уведомлением
+    rgb, lines = _notice("Fangfish")
+    frames = [np.zeros((40, 320, 3), np.uint8), rgb]
+    texts = iter(["ISLAND OF ZOU", "New Item <Fangfish>"])
+    import macro.catches as cm
+    orig = cm.ocr.read_lines
+    cm.ocr.read_lines = lambda a: [{"text": next(texts), "words": []}]
+    try:
+        c = log.add_frames(frames)
+    finally:
+        cm.ocr.read_lines = orig
+    assert c is not None and log.name_of(c) == "Fangfish"
+
+
+def test_rarity_from_text_color():
+    from macro.catches import read_notice, text_rarity
+    rgb, lines = _notice("Fangfish", color=(80, 220, 255))
+    assert read_notice(rgb, lines) == ("Fangfish", "rare")              # голубой, как на скрине
+    rgb, lines = _notice("Shadow Eel", color=(190, 110, 255))
+    assert read_notice(rgb, lines)[1] == "epic"
+    rgb, lines = _notice("Plain Cod", color=(255, 255, 255))
+    assert read_notice(rgb, lines)[1] == "common"
+    # Голубая вода за белым текстом не делает его «редким»
+    assert text_rarity(rgb, lines[0]["words"][0][1]) == "common"
+    # Радуга — легендарная
+    from macro.theme import _font
+    img = Image.new("RGB", (400, 40), (40, 110, 190))
+    d = ImageDraw.Draw(img)
+    x = 10
+    for ch, col in zip("<RAINBOWFISH>", [(255, 60, 60), (255, 160, 40), (250, 240, 60), (60, 230, 90),
+                                          (60, 200, 255), (90, 90, 255), (200, 80, 255)] * 2):
+        d.text((x, 8), ch, font=_font(20), fill=col, stroke_width=2, stroke_fill=(0, 0, 0))
+        x += 22
+    assert text_rarity(np.asarray(img), (8, 6, 300, 28)) == "legendary"
+    # Скрин из игры: «<Fangfish>» голубая, «New Item» белая
+    shot = np.asarray(Image.open(os.path.join(os.path.dirname(__file__), "notice_fangfish.png")).convert("RGB"))
+    assert text_rarity(shot, (128, 10, 122, 24)) == "rare"
+    assert text_rarity(shot, (32, 10, 95, 24)) == "common"
+
+
+def test_new_fish_added_and_linked_to_icon():
     from macro import fishdb
     from macro.catches import CatchLog
     log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
-    # Иконка узнаётся, название берётся из уведомления и запоминается
-    c = log.add(_shot("06"), text="You caught a Pumpkin King!")
-    assert log.name_of(c) == "Pumpkin King" and not c.new
-    assert fishdb.learned_name("06") == "Pumpkin King"
-    # Дальше рыба узнаётся по названию
-    assert log.add(_shot("06", scale=0.8), text="You caught a Pumpkin King!") is c and c.count == 2
-    # Похоже на ту же иконку, но игра пишет другое название — это другая, новая рыба
-    other = log.add(_shot("06"), text="You caught a Pumpkin Queen!")
-    assert other is not c and other.new and log.name_of(other) == "Pumpkin Queen"
-
-
-def test_unknown_fish_are_added_to_catalog():
-    from macro import fishdb
-    from macro.catches import CatchLog
-    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
-    eel = _new_fish_shot((40, 220, 90))
-    c = log.add(eel, text="You caught a Mystery Eel!")
-    assert c.new and c.fish_id.startswith("u") and log.name_of(c) == "Mystery Eel"
-    assert c.rarity is None                                           # редкость выберет пользователь
-    # Повторная поимка — уже из каталога: по названию и даже без него (по иконке)
-    assert log.add(eel, text="You caught a Mystery Eel!") is c
-    assert log.add(eel, text="") is c and c.count == 3 and not c.new
-    # Без названия новая рыба тоже записывается
-    blob = log.add(_new_fish_shot((250, 40, 200)), text="")
-    assert blob.new and log.name_of(blob).startswith("Unknown Fish")
+    rgb, lines = _notice("Fangfish")
+    c = log.add(rgb, lines=lines)
+    assert c.new and c.fish_id.startswith("u") and log.name_of(c) == "Fangfish" and c.rarity == "rare"
+    assert c.icon.size == (72, 72)                                     # силуэт цвета редкости
+    assert log.add(rgb, lines=lines) is c and c.count == 2 and not c.new
     # Каталог переживает перезапуск
     fishdb.set_store_dir(fishdb.store_dir())
-    assert fishdb.by_id(c.fish_id)["name"] == "Mystery Eel"
-    fishdb.set_rarity(c.fish_id, "epic")
-    assert fishdb.by_id(c.fish_id)["rarity"] == "epic"
-    assert "🟣 Mystery Eel × 3" in log.summary_text()
+    assert fishdb.by_id(c.fish_id)["name"] == "Fangfish"
+    # Пользователь говорит: это рыба со скрина №08 — название переходит к её иконке
+    uid = c.fish_id
+    fishdb.link_to_builtin(uid, "08")
+    log.remap(uid, "08")
+    assert fishdb.by_id(uid) is None and log.name_of(c) == "Fangfish" and c.fish_id == "08"
+    c2 = log.add(rgb, lines=lines)
+    assert c2 is c and c.count == 3 and fishdb.find_by_name("Fangfish")["id"] == "08"
+    assert "🔵 Fangfish × 3" in log.summary_text()
 
 
 def test_skip_first_bait_purchase(monkeypatch):

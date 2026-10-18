@@ -738,7 +738,7 @@ class App:
             ctk.CTkLabel(left, text="", image=img, width=40).pack(side="left", padx=(0, 10))
             info = fishdb.rarity_info(fish["rarity"])
             if fish["id"].startswith("u"):
-                # Выученная рыба: редкость не знаем — пусть выберет пользователь
+                # Выученная рыба: редкость — по цвету текста в игре, можно поправить
                 var_r = tk.StringVar(value=info["title"])
 
                 def pick(title, fid=fish["id"]):
@@ -747,6 +747,23 @@ class App:
                 ctk.CTkOptionMenu(left, values=list(rarity_titles), variable=var_r, command=pick, width=118,
                                   fg_color=FIELD, button_color=CARD_BORDER, button_hover_color=ACCENT,
                                   font=(self.display, 12, "bold")).pack(side="left")
+                # Это рыба со скрина? Тогда название переходит к её настоящей иконке
+                choices = {f"{fishdb.display_name(b, self.cfg)} ({fishdb.rarity_info(b['rarity'])['title'].lower()})":
+                           b["id"] for b in fishdb.BUILTIN}
+
+                def link(label, fid=fish["id"], choices=choices):
+                    bid = choices.get(label)
+                    if not bid:
+                        return
+                    fishdb.link_to_builtin(fid, bid)
+                    self.catch_log.remap(fid, bid)
+                    self.log(f"Иконка привязана: {fishdb.display_name(fishdb.by_id(bid), self.cfg)}")
+                    self.remote.poke()
+                    self.root.after(10, self._fill_catalog)
+                ctk.CTkOptionMenu(left, values=list(choices), variable=tk.StringVar(value="Иконка со скрина…"),
+                                  command=link, width=150, fg_color=FIELD, button_color=CARD_BORDER,
+                                  button_hover_color=ACCENT, dynamic_resizing=False,
+                                  font=(self.display, 12, "bold")).pack(side="left", padx=(6, 0))
             else:
                 color = info["color"]
                 lbl = tk.Label(left, text=italic_pad(info["title"].upper()), font=(self.display, 10, "bold", "italic"),
@@ -793,17 +810,21 @@ class App:
             self.catch_area_label.configure(text=self._catch_area_text(), fg=GREEN)
             self._save()
             self.log(f"Область уведомления о рыбе: {area}")
-        self._open_overlay(lambda: AreaSelector(self.root, self.cfg.get("catch_area"), done))
+        self._open_overlay(lambda: AreaSelector(self.root, self.cfg.get("catch_area"), done,
+                                                hint="Выделите место, где появляется «New Item <рыба>»"))
 
-    def _on_catch(self, rgb):
+    def _on_catch(self, frames):
         """Из потока макроса: распознаём в отдельном потоке, чтобы не тормозить рыбалку."""
         def job():
             log = self.catch_log
-            catch = log.add(rgb)
+            catch = log.add_frames(frames)
+            if catch is None:
+                self.log_threadsafe("Уведомления «New Item <рыба>» в области не было — улов не записан")
+                return
             name = log.name_of(catch)
             self.log_threadsafe(f"Поймано: {name} (×{catch.count})")
             if catch.new:
-                self.log_threadsafe(f"🆕 Новая рыба в каталоге: {name} — выберите её редкость в «Рыбалка → Каталог рыб»")
+                self.log_threadsafe(f"🆕 Новая рыба в каталоге: {name}. Иконку можно привязать в «Рыбалка → Каталог рыб»")
                 self.events.put(("catalog", None))
                 self.tg.send(f"🆕 Новая рыба в каталоге: {name}", buttons=False)
             self.remote.poke()
@@ -822,23 +843,23 @@ class App:
 
         def job():
             from . import fishdb, ocr
-            from .catches import clean_name
+            from .catches import read_notice
             rgb = screen.grab(area)
-            text = ocr.read_text(rgb)
-            name = clean_name(text)
+            lines = ocr.read_lines(rgb)
             if not ocr.available():
-                self.log_threadsafe("Windows OCR недоступен — названия не читаются, рыба узнаётся только по иконке")
-            self.log_threadsafe(f"Текст уведомления: «{text.strip()}» → название: «{name or 'не найдено'}»")
-            fish = fishdb.find_by_name(name, self.cfg) if name else None
-            how = "по названию"
-            if fish is None:
-                fish, score = fishdb.match(rgb)
-                how = f"по иконке, сходство {score:.0%}"
-            if fish:
-                title = fishdb.rarity_info(fish["rarity"])["title"].lower()
-                self.log_threadsafe(f"Узнал рыбу {how}: {fishdb.display_name(fish, self.cfg)} ({title})")
-            else:
-                self.log_threadsafe("Такой рыбы в каталоге нет — при поимке она добавится сама")
+                self.log_threadsafe("Windows OCR недоступен — уведомления о рыбе не читаются")
+                return
+            text = " | ".join(line["text"] for line in lines) or "ничего"
+            self.log_threadsafe(f"Текст в области: {text}")
+            notice = read_notice(rgb, lines)
+            if not notice:
+                self.log_threadsafe("Уведомления «New Item <рыба>» нет — такие надписи макрос пропускает")
+                return
+            name, rarity = notice
+            title = fishdb.rarity_info(rarity)["title"].lower() if rarity else "не определена"
+            fish = fishdb.find_by_name(name, self.cfg)
+            known = "уже в каталоге" if fish else "новая — добавится при поимке"
+            self.log_threadsafe(f"Рыба: {name}, редкость по цвету: {title}, {known}")
         threading.Thread(target=job, daemon=True).start()
 
     def _send_catches(self):
@@ -996,6 +1017,8 @@ class App:
             # Пока открыт выбор области/точки — только отмена, остальные горячие клавиши молчат
             if name == "esc":
                 self._close_overlay()
+            elif name == "enter" and hasattr(self._overlay, "confirm"):
+                self._overlay.confirm()  # Enter ловим глобально: оверлею Windows не всегда даёт фокус
             elif name == self.cfg["hotkey_change_area"]:
                 self.change_area()
             return

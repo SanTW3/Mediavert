@@ -42,6 +42,95 @@ def clean_name(text):
     return name.title() if name else ""
 
 
+# «New Item <Fangfish>»: название в угловых скобках. OCR иногда путает скобки — берём похожие
+BRACKETED = re.compile(r"[<«‹(\[{]\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*[>»›)\]}]")
+NEW_ITEM = re.compile(r"new\s*item\s*[:\-]?\s*[<«‹(\[{]?\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*(?:[>»›)\]}]|$)",
+                      re.IGNORECASE)
+
+
+def parse_name(text):
+    """Название рыбы из текста уведомления или None, если это не уведомление о предмете."""
+    for line in (text or "").splitlines():
+        m = BRACKETED.search(line) or NEW_ITEM.search(line)
+        if m:
+            name = re.sub(r"\s+", " ", m.group(1)).strip(" -'")
+            if len(name) >= 2:
+                return name
+    return None
+
+
+def text_rarity(rgb, rect=None):
+    """Редкость по цвету букв названия: голубой — редкая, фиолетовый — эпическая,
+    много цветов — легендарная, белый — обычная. None — цвет не узнали."""
+    a = np.asarray(rgb)[:, :, :3]
+    if rect:
+        x, y, w, h = (int(round(v)) for v in rect)
+        a = a[max(y, 0):max(y + h, 0), max(x, 0):max(x + w, 0)]
+    if a.size == 0:
+        return None
+    img = a.astype(np.float32) / 255.0
+    mx2 = img.max(axis=2)
+    # Буквы в игре с тёмной обводкой: берём только яркие пиксели рядом с тёмным контуром —
+    # так голубая вода и небо за текстом не путают цвет
+    dark = mx2 < 0.2
+    near = dark.copy()
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            near |= np.roll(np.roll(dark, dy, axis=0), dx, axis=1)
+    glyph = near & ~dark & (mx2 > 0.6)
+    # …и не цвета фона: снаружи обводки сразу начинается фон (самый частый цвет по краю рамки)
+    edge = np.concatenate([img[0], img[-1], img[:, 0], img[:, -1]])
+    q = (edge * 15).astype(int)
+    keys, counts = np.unique(q[:, 0] * 256 + q[:, 1] * 16 + q[:, 2], return_counts=True)
+    k = keys[counts.argmax()]
+    bg = np.array([k // 256, (k // 16) % 16, k % 16]) / 15.0
+    glyph &= np.abs(img - bg).max(axis=2) > 0.16
+    f = img[glyph]
+    mx, mn = f.max(axis=1), f.min(axis=1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
+    bright = np.ones(len(f), bool)
+    colored = sat > 0.35
+    if bright.sum() < 8:
+        return None
+    if colored.sum() < bright.sum() * 0.25:
+        return "common"                       # белые буквы
+    c = f[colored]
+    r, g, b = c[:, 0], c[:, 1], c[:, 2]
+    cmax, cmin = c.max(axis=1), c.min(axis=1)
+    d = np.maximum(cmax - cmin, 1e-6)
+    hue = np.where(cmax == r, ((g - b) / d) % 6, np.where(cmax == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+    hist = np.histogram(hue, bins=12, range=(0, 360))[0] / len(hue)
+    if (hist >= 0.08).sum() >= 4:
+        return "legendary"                    # радуга
+    main = (np.argmax(hist) + 0.5) * 30
+    if 160 <= main <= 215:
+        return "rare"
+    if 245 <= main <= 320:
+        return "epic"
+    return None
+
+
+def read_notice(rgb, lines):
+    """(название, редкость) из уведомления «New Item <…>» или None."""
+    for line in lines:
+        name = parse_name(line["text"])
+        if not name:
+            continue
+        # Рамка слов, из которых состоит название, — по ним меряем цвет
+        parts = set(re.sub(r"[^a-z0-9 ]", " ", name.lower()).split())
+        rects = [r for t, r in line.get("words", ())
+                 if set(re.sub(r"[^a-z0-9 ]", " ", t.lower()).split()) & parts]
+        rect = None
+        if rects:
+            x0 = min(r[0] for r in rects)
+            y0 = min(r[1] for r in rects)
+            x1 = max(r[0] + r[2] for r in rects)
+            y1 = max(r[1] + r[3] for r in rects)
+            rect = (x0, y0, x1 - x0, y1 - y0)
+        return name, (text_rarity(rgb, rect) if rect else None)
+    return None
+
+
 def fmt_peli(n):
     return f"{n:,}".replace(",", " ")
 
@@ -94,34 +183,25 @@ class CatchLog:
         return fishdb.display_name(c.fish, self.cfg)
 
     # ---------- запись ----------
-    def identify(self, rgb, text=None):
-        """(рыба, новая ли) по снимку уведомления. Новую рыбу добавляет в каталог."""
-        if text is None:
-            text = ocr.read_text(np.ascontiguousarray(np.asarray(rgb)[:, :, :3]))
-        name = clean_name(text)
-        # 1) По названию из уведомления — надёжнее всего
-        fish = fishdb.find_by_name(name, self.cfg) if name else None
+    def add(self, rgb, text=None, lines=None):
+        """Записать улов по снимку уведомления «New Item <рыба>». Возвращает Catch или None,
+        если на снимке нет такого уведомления (другие надписи игры не считаются)."""
+        if lines is None:
+            lines = [{"text": text, "words": []}] if text is not None else ocr.read_lines(
+                np.ascontiguousarray(np.asarray(rgb)[:, :, :3]))
+        notice = read_notice(rgb, lines)
+        if not notice:
+            return None
+        name, rarity = notice
+        fish = fishdb.find_by_name(name, self.cfg)
+        new = False
         if fish is None:
-            # 2) По иконке. Если у похожей рыбы уже есть другое прочитанное название — это другая рыба
-            found, _score = fishdb.match(rgb)
-            if found:
-                known = fishdb.learned_name(found["id"])
-                if name and known and known.lower() != name.lower():
-                    found = None
-                elif name and not known:
-                    fishdb.learn_name(found["id"], name)
-            fish = found
-        if fish is not None:
-            return fish, False
-        # 3) Такой рыбы ещё нет — заносим в каталог: иконка из уведомления, название оттуда же
-        fish = fishdb.add_fish(fishdb.extract_icon(rgb), name or None)
-        if name:
-            fishdb.learn_name(fish["id"], name)
-        return fish, True
-
-    def add(self, rgb, text=None):
-        """Записать улов по снимку области уведомления. Возвращает Catch."""
-        fish, new = self.identify(rgb, text)
+            # Такой рыбы ещё нет — в каталог: название из уведомления, редкость по цвету текста,
+            # вместо иконки — силуэт цвета редкости (иконку можно привязать в каталоге)
+            fish = fishdb.add_fish(fishdb.placeholder_icon(rarity), name, rarity=rarity)
+            new = True
+        elif fish["id"].startswith("u") and not fish.get("rarity") and rarity:
+            fishdb.set_rarity(fish["id"], rarity)
         with self._lock:
             match = next((c for c in self.items if c.fish_id == fish["id"]), None)
             if match is None:
@@ -131,6 +211,27 @@ class CatchLog:
             match.last = time.time()
             match.new = new
             return match
+
+    def add_frames(self, frames):
+        """Несколько снимков подряд (уведомление появляется и гаснет) — берём первый с рыбой."""
+        for rgb in frames:
+            c = self.add(rgb)
+            if c is not None:
+                return c
+        return None
+
+    def remap(self, old_id, new_id):
+        """Рыбу связали с иконкой из каталога — переносим её улов на новую запись."""
+        with self._lock:
+            old = next((c for c in self.items if c.fish_id == old_id), None)
+            if old is None:
+                return
+            target = next((c for c in self.items if c.fish_id == new_id), None)
+            if target is None:
+                old.fish_id = new_id
+            else:
+                target.count += old.count
+                self.items.remove(old)
 
     def _sorted(self):
         with self._lock:

@@ -181,7 +181,7 @@ def find_by_name(name, cfg=None):
     return None
 
 
-def add_fish(icon_rgba, name=None):
+def add_fish(icon_rgba, name=None, rarity=None):
     """Новая рыба из уведомления. Возвращает её запись."""
     global _features
     with _lock:
@@ -193,12 +193,55 @@ def add_fish(icon_rgba, name=None):
             fid = f"u{n:03d}"
         os.makedirs(store_dir(), exist_ok=True)
         icon_rgba.save(icon_path(fid))
-        fish = {"id": fid, "name": name or f"Unknown Fish #{n}", "rarity": None, "price": 0}
+        fish = {"id": fid, "name": name or f"Unknown Fish #{n}", "rarity": rarity, "price": 0, "placeholder": True}
         data["fish"].append(fish)
         _save()
         _icons[fid] = icon_rgba
         _features = None
         return fish
+
+
+def link_to_builtin(fish_id, builtin_id):
+    """Выученная рыба — это рыба со скрина: её название переходит к иконке из каталога."""
+    global _features
+    with _lock:
+        data = _load()
+        fish = next((f for f in data["fish"] if f["id"] == fish_id), None)
+        if fish is None or not by_id(builtin_id):
+            return
+        data["names"][builtin_id] = data["names"].get(fish_id) or fish["name"]
+        data["names"].pop(fish_id, None)
+        data["fish"].remove(fish)
+        _save()
+        _icons.pop(fish_id, None)
+        _features = None
+        try:
+            os.remove(icon_path(fish_id))
+        except OSError:
+            pass
+
+
+def placeholder_icon(rarity=None, size=72):
+    """Силуэт рыбы цвета редкости — пока у рыбы нет настоящей иконки."""
+    import colorsys
+    from PIL import ImageDraw
+    mask = Image.new("L", (size, size), 0)
+    d = ImageDraw.Draw(mask)
+    s = size
+    d.ellipse([s * 0.12, s * 0.3, s * 0.72, s * 0.7], fill=255)
+    d.polygon([(s * 0.66, s * 0.5), (s * 0.92, s * 0.28), (s * 0.92, s * 0.72)], fill=255)
+    d.polygon([(s * 0.35, s * 0.32), (s * 0.5, s * 0.14), (s * 0.55, s * 0.34)], fill=255)
+    d.ellipse([s * 0.22, s * 0.42, s * 0.3, s * 0.5], fill=0)   # глаз
+    color = rarity_info(rarity)["color"]
+    if color == "rainbow":
+        row = np.array([colorsys.hsv_to_rgb(i / s, 0.7, 1.0) for i in range(s)]) * 255
+        fill = Image.fromarray(np.repeat(row.astype(np.uint8)[None], s, axis=0), "RGB")
+    else:
+        c = color.lstrip("#")
+        fill = Image.new("RGB", (s, s), tuple(int(c[i:i + 2], 16) for i in (0, 2, 4)))
+    icon = fill.convert("RGBA")
+    icon.putalpha(mask)
+    return icon
 
 
 # ---------- распознавание по картинке ----------

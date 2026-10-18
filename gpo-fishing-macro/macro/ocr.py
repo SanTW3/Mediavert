@@ -57,29 +57,46 @@ async def _recognize(engine, rgb):
         bitmap = SoftwareBitmap(BitmapPixelFormat.BGRA8, w, h, BitmapAlphaMode.PREMULTIPLIED)
         bitmap.copy_from_buffer(buffer)
     result = await engine.recognize_async(bitmap)
-    return result.text or ""
+    lines = []
+    for line in result.lines:
+        words = []
+        for w in line.words:
+            r = w.bounding_rect
+            words.append((w.text, (r.x, r.y, r.width, r.height)))
+        lines.append({"text": line.text, "words": words})
+    return {"text": result.text or "", "lines": lines}
 
 
 last_error = None
 
 
-def read_text(rgb, raise_errors=False):
-    """rgb — HxWx3 uint8. Возвращает распознанный текст или "" (ошибку — в ocr.last_error)."""
+def read_lines(rgb, raise_errors=False):
+    """Строки текста со словами и их рамками в координатах исходной картинки:
+    [{"text": "New Item <Fangfish>", "words": [("New", (x, y, w, h)), …]}, …]"""
     global last_error
     engine = _get_engine() if sys.platform == "win32" else None
     if engine is None:
-        return ""
+        return []
     # Мелкий игровой текст OCR читает лучше, если картинку увеличить
     from PIL import Image
     import numpy as np
-    img = Image.fromarray(rgb)
+    img = Image.fromarray(np.ascontiguousarray(rgb))
+    k = 1.0
     if img.height < 60:
         k = 60 / max(img.height, 1)
         img = img.resize((int(img.width * k), 60), Image.LANCZOS)
     try:
-        return asyncio.run(_recognize(engine, np.ascontiguousarray(np.asarray(img))))
+        data = asyncio.run(_recognize(engine, np.ascontiguousarray(np.asarray(img))))
     except Exception as exc:
         last_error = exc
         if raise_errors:
             raise
-        return ""
+        return []
+    for line in data["lines"]:
+        line["words"] = [(t, tuple(v / k for v in rect)) for t, rect in line["words"]]
+    return data["lines"]
+
+
+def read_text(rgb, raise_errors=False):
+    """rgb — HxWx3 uint8. Распознанный текст или "" (ошибку — в ocr.last_error)."""
+    return "\n".join(line["text"] for line in read_lines(rgb, raise_errors))

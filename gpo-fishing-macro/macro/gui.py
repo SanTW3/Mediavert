@@ -58,8 +58,14 @@ def key_name(key):
     return None
 
 
+def italic_pad(text):
+    """Наклонный текст шире прямого, а Tk меряет ширину по прямому — последний символ
+    обрезается справа. Пара пробелов в конце даёт запас под наклон."""
+    return f"{text}  "
+
+
 def fmt_point(p):
-    return f"X {p[0]}  ·  Y {p[1]}" if p else "Not set"
+    return f"X {p[0]}  ·  Y {p[1]}" if p else "Не задано"
 
 
 def smooth_scrolling(frame):
@@ -116,7 +122,7 @@ class App:
                                ("CTkSegmentedButton", 2), ("CTkTextbox", 2)):
             ctk.ThemeManager.theme[widget]["corner_radius"] = radius
         self.root = ctk.CTk(fg_color=BG)
-        self.root.title("GPO Fishing Macro")
+        self.root.title("GPO — макрос рыбалки")
         self.root.geometry("600x760")
         self.root.minsize(600, 600)  # шапка-картинка рассчитана на 600 px
         try:
@@ -145,7 +151,7 @@ class App:
 
         self.blackout = Blackout(self.root, self.log_threadsafe)
         self._blackout_job = None
-        self._status_text = "Stopped"
+        self._status_text = "Остановлен"
         self.tg = TelegramControl(self.cfg, lambda cmd: self.events.put(("tg", cmd)), self.log_threadsafe,
                                   webapp_link=self._webapp_link)
         self.remote = Remote(self.cfg, self._remote_status, lambda cmd: self.events.put(("tg", cmd)),
@@ -194,7 +200,7 @@ class App:
         card.pack(fill="x", pady=(0, 10), padx=2)
         # Заголовок карточки — как плашки меню P3R: курсив капсом и циановая черта слева
         tk.Frame(card, bg=HILITE, width=4).place(x=1, y=13, width=4, height=20)
-        tk.Label(card, text=title.upper(), font=TK_TITLE, fg=HILITE, bg=CARD).pack(
+        tk.Label(card, text=italic_pad(title.upper()), font=TK_TITLE, fg=HILITE, bg=CARD).pack(
             anchor="w", padx=16, pady=(10, 0 if subtitle else 6))
         if subtitle:
             tk.Label(card, text=subtitle, font=TK_SUB, fg=MUTED, bg=CARD).pack(anchor="w", padx=16, pady=(0, 6))
@@ -285,10 +291,10 @@ class App:
         self._banner = ctk.CTkImage(banner, size=(600, 110))
         header = ctk.CTkLabel(root, text="", image=self._banner, fg_color=BG, height=110)
         header.pack(fill="x", pady=(0, 8))
-        self.status = ctk.CTkLabel(header, text="  ●  STOPPED  ", font=(self.display, 13, "bold", "italic"),
+        self.status = ctk.CTkLabel(header, text="  ●  ОСТАНОВЛЕН  ", font=(self.display, 13, "bold", "italic"),
                                    text_color="white", fg_color=RED, corner_radius=0, height=22)
         self.status.place(x=22, y=70)
-        self.start_btn = ctk.CTkButton(header, text="▶  START", width=150, height=48, corner_radius=0,
+        self.start_btn = ctk.CTkButton(header, text="▶  СТАРТ ", width=150, height=48, corner_radius=0,
                                        font=(self.display, 20, "bold", "italic"), fg_color=GREEN,
                                        hover_color=GREEN_HOVER, border_width=2, border_color=HILITE,
                                        command=self.engine.toggle)
@@ -300,15 +306,15 @@ class App:
         stats = ctk.CTkFrame(root, fg_color="transparent")
         stats.pack(fill="x", padx=16, pady=(0, 8))
         self.stat_values = {}
-        for i, (key, title) in enumerate((("catches", "Catches"), ("casts", "Casts"), ("runtime", "Runtime"),
-                                          ("rate", "Fish / hour"))):
+        for i, (key, title) in enumerate((("catches", "Поймано"), ("casts", "Забросов"), ("runtime", "Время"),
+                                          ("rate", "Рыбы в час"))):
             stats.columnconfigure(i, weight=1, uniform="stats")
             card = ctk.CTkFrame(stats, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=4)
             card.grid(row=0, column=i, sticky="ew", padx=3)
             tk.Frame(card, bg=HILITE, height=3).place(x=1, y=1, relwidth=0.35, height=3)
             value = ctk.CTkLabel(card, text="0", font=(self.display, 26, "bold", "italic"), text_color=TEXT)
             value.pack(pady=(8, 0))
-            ctk.CTkLabel(card, text=title.upper(), font=(self.display, 11, "italic"),
+            ctk.CTkLabel(card, text=italic_pad(title.upper()), font=(self.display, 11, "italic"),
                          text_color=HILITE).pack(pady=(0, 8))
             self.stat_values[key] = value
 
@@ -317,21 +323,21 @@ class App:
                               segmented_button_selected_hover_color=ACCENT_HOVER,
                               segmented_button_unselected_color=CARD,
                               segmented_button_unselected_hover_color=FIELD, corner_radius=4)
-        tabs._segmented_button.configure(font=(self.display, 13, "bold", "italic"), corner_radius=2)
+        tabs._segmented_button.configure(font=(self.display, 14, "bold"), corner_radius=2)
         tabs.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        for title, builder in (("General", self._tab_general), ("Casting", self._tab_casting),
-                               ("Fishing", self._tab_fishing), ("Pre-Cast", self._tab_precast),
-                               ("Literally Everything Else", self._tab_else)):
+        for title, builder in (("Основное", self._tab_general), ("Заброс", self._tab_casting),
+                               ("Рыбалка", self._tab_fishing), ("Подготовка", self._tab_precast),
+                               ("Всё остальное", self._tab_else)):
             builder(tabs.add(title))
         self._refresh_hotkey_hint()
 
     # --- General ---
     def _tab_general(self, tab):
         page = self._scroll(tab)
-        hk = self._card(page, "Hotkeys", "Work everywhere, even when the game window is active")
+        hk = self._card(page, "Горячие клавиши", "Работают везде, даже когда активно окно игры")
         self.hotkey_labels = {}
-        for label, key in (("Start / Stop", "hotkey_start_stop"), ("Change Area", "hotkey_change_area"),
-                           ("Exit", "hotkey_exit"), ("Screen Off / On", "hotkey_blackout")):
+        for label, key in (("Старт / стоп", "hotkey_start_stop"), ("Выбрать область", "hotkey_change_area"),
+                           ("Выход", "hotkey_exit"), ("Экран выкл / вкл", "hotkey_blackout")):
             row = self._row(hk)
             self._label(hk, row, label)
             right = tk.Frame(hk, bg=CARD)
@@ -339,44 +345,44 @@ class App:
             cap = ctk.CTkLabel(right, text=self.cfg[key].upper(), width=56, height=30, corner_radius=2,
                                fg_color=FIELD, text_color=ACCENT, font=(FONT, 13, "bold"))
             cap.pack(side="left", padx=(0, 8))
-            ctk.CTkButton(right, text="Rebind", width=80, height=30, fg_color="transparent", border_width=1,
+            ctk.CTkButton(right, text="Сменить", width=80, height=30, fg_color="transparent", border_width=1,
                           border_color=CARD_BORDER, hover_color=FIELD,
                           command=lambda k=key: self._rebind(k)).pack(side="left")
             self.hotkey_labels[key] = cap
 
-        win = self._card(page, "Window")
-        self._switch(win, "Always on Top", "always_on_top", command=self._apply_topmost)
+        win = self._card(page, "Окно")
+        self._switch(win, "Поверх всех окон", "always_on_top", command=self._apply_topmost)
 
-        bo = self._card(page, "Screen Off While Fishing",
-                        "Black screen for you, the macro still sees the game")
-        self._switch(bo, "Turn screen black when the macro starts", "blackout_enabled",
-                     "Any key / mouse button, the hotkey or the Telegram button turns it back on")
-        self._switch(bo, "All monitors", "blackout_all_monitors", "Off = only the monitor with Roblox")
-        self._num(bo, "Delay before going black", "blackout_delay", "After pressing Start", unit="s")
+        bo = self._card(page, "Чёрный экран во время рыбалки",
+                        "Вы видите чёрный экран, а макрос по-прежнему видит игру")
+        self._switch(bo, "Гасить экран после старта", "blackout_enabled",
+                     "Вернуть: любая клавиша или кнопка мыши, горячая клавиша или кнопка в Telegram")
+        self._switch(bo, "Все мониторы", "blackout_all_monitors", "Выкл — только монитор с Roblox")
+        self._num(bo, "Задержка перед затемнением", "blackout_delay", "После нажатия «Старт»", unit="s")
 
-        nh = self._card(page, "Number Hotkeys", "Hotbar slots in the game")
-        self._option(nh, "Rod Hotkey", "rod_hotkey", DIGITS, "Slot with your fishing rod")
-        self._option(nh, "Anything Else Hotkey", "other_hotkey", DIGITS,
-                     "Any other slot; pressed before the rod so the rod is always equipped")
+        nh = self._card(page, "Слоты предметов", "Номера слотов на панели в игре")
+        self._option(nh, "Слот удочки", "rod_hotkey", DIGITS, "Где лежит удочка")
+        self._option(nh, "Любой другой слот", "other_hotkey", DIGITS,
+                     "Нажимается перед удочкой, чтобы удочка точно оказалась в руках")
 
     # --- Casting ---
     def _tab_casting(self, tab):
         page = self._scroll(tab)
-        wp = self._card(page, "Water Point", "Where the cursor aims when casting")
-        self._point(wp, "Set Water Point", "water_point", "Кликните по воде, куда забрасывать удочку")
-        ct = self._card(page, "Cast Timing")
-        self._num(ct, "Cast Hold Duration", "cast_hold", "How long to hold the mouse to cast", unit="s")
-        self._num(ct, "Recast Timeout", "recast_timeout", "Recast if no bite after this long", unit="s")
+        wp = self._card(page, "Точка воды", "Куда целится курсор при забросе")
+        self._point(wp, "Указать точку воды", "water_point", "Кликните по воде, куда забрасывать удочку")
+        ct = self._card(page, "Время заброса")
+        self._num(ct, "Удержание при забросе", "cast_hold", "Сколько держать ЛКМ при забросе", unit="s")
+        self._num(ct, "Перезаброс через", "recast_timeout", "Если за это время не клюнуло", unit="s")
 
     # --- Fishing ---
     def _tab_fishing(self, tab):
         page = self._scroll(tab)
-        pd = self._card(page, "PD Control Parameters", "Keeps your dark bar on the white fish line")
-        self._num(pd, "Kp (Proportional)", "kp", "How hard the bar is pulled towards the fish")
-        self._num(pd, "Kd (Derivative)", "kd", "Damping: raise it if the bar overshoots the fish")
-        self._num(pd, "PD Clamp", "pd_clamp", "Limit of the controller output")
-        tm = self._card(page, "Timing")
-        self._num(tm, "Fish End Delay", "fish_end_delay", "Pause after the minigame ends", unit="s")
+        pd = self._card(page, "PD-регулятор", "Держит вашу тёмную полосу на белой черте рыбы")
+        self._num(pd, "Kp (пропорциональный)", "kp", "Насколько сильно тянуть полосу к рыбе")
+        self._num(pd, "Kd (дифференциальный)", "kd", "Гашение: увеличьте, если полоса проскакивает рыбу")
+        self._num(pd, "Ограничение PD", "pd_clamp", "Предел выхода регулятора")
+        tm = self._card(page, "Тайминги")
+        self._num(tm, "Пауза после рыбы", "fish_end_delay", "Ожидание после конца мини-игры", unit="s")
 
     # --- Pre-Cast ---
     def _tab_precast(self, tab):
@@ -393,39 +399,39 @@ class App:
                     settings.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
                 else:
                     settings.grid_forget()
-            self._switch(card, "Enabled", flag_key)
+            self._switch(card, "Включено", flag_key)
             self.vars[flag_key].trace_add("write", toggle)
             toggle()
 
         def buy(f):
-            tk.Label(f, text="Order: E → Left → Middle → amount → Left → Right → Middle",
+            tk.Label(f, text="Порядок: E → левая → средняя → количество → левая → правая → средняя",
                      font=TK_HINT, fg=MUTED, bg=CARD).grid(row=self._row(f), column=0, columnspan=2,
                                                                  sticky="w", pady=(0, 4))
-            self._point(f, "Set Left Point", "buy_left", "Кликните по левой кнопке покупки")
-            self._point(f, "Set Middle Point", "buy_middle", "Кликните по средней кнопке покупки")
-            self._point(f, "Set Right Point", "buy_right", "Кликните по правой кнопке покупки")
-            self._num(f, "Loops Per Purchase", "loops_per_purchase", "Buy bait every N loops", kind=int)
-            self._switch(f, "Type bait amount", "buy_type_amount", "Types Loops Per Purchase after the first Middle click")
+            self._point(f, "Левая точка", "buy_left", "Кликните по левой кнопке покупки")
+            self._point(f, "Средняя точка", "buy_middle", "Кликните по средней кнопке покупки")
+            self._point(f, "Правая точка", "buy_right", "Кликните по правой кнопке покупки")
+            self._num(f, "Циклов на покупку", "loops_per_purchase", "Покупать наживку каждые N циклов", kind=int)
+            self._switch(f, "Вводить количество", "buy_type_amount", "Вписывает «циклов на покупку» после первого клика по средней точке")
 
         def fruit(f):
-            self._option(f, "Fruit Hotkey", "fruit_hotkey", DIGITS)
-            self._point(f, "Set Store Point", "store_point", "Кликните по кнопке Store")
+            self._option(f, "Слот фрукта", "fruit_hotkey", DIGITS)
+            self._point(f, "Точка Store", "store_point", "Кликните по кнопке Store")
 
         def bait(f):
-            self._point(f, "Set Bait Point", "bait_point", "Кликните по верхней наживке в списке")
+            self._point(f, "Точка наживки", "bait_point", "Кликните по верхней наживке в списке")
 
-        section("auto_buy_bait", "Auto Buy Common Bait", "Stand next to the bait seller", buy)
-        section("auto_store_fruit", "Auto Store Devil Fruit", "Stores fished devil fruits", fruit)
-        section("auto_select_bait", "Auto Select Top Bait", "Clicks the top bait before every cast", bait)
+        section("auto_buy_bait", "Автопокупка наживки", "Встаньте рядом с продавцом наживки", buy)
+        section("auto_store_fruit", "Автосохранение фрукта", "Убирает выловленные дьявольские фрукты в хранилище", fruit)
+        section("auto_select_bait", "Выбор верхней наживки", "Кликает верхнюю наживку перед каждым забросом", bait)
 
     # --- Literally Everything Else ---
     def _tab_else(self, tab):
         warn = ctk.CTkFrame(tab, fg_color=WARN_BG, border_color=RED, border_width=1, corner_radius=2)
         warn.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(warn, text="⚠  DON'T CHANGE IF YOU DON'T KNOW WHAT YOU'RE DOING",
+        ctk.CTkLabel(warn, text="⚠  НЕ МЕНЯЙТЕ, ЕСЛИ НЕ ЗНАЕТЕ, ЧТО ДЕЛАЕТЕ ",
                      font=(FONT, 13, "bold"), text_color="#ff7b72").pack(padx=12, pady=8)
         # Подразделы: в каждом немного карточек — прокрутка короче и не тормозит
-        groups = ["Delays", "Anti-Macro & PD", "Phone Alarm", "Detection", "Log"]
+        groups = ["Задержки", "Античит и PD", "Будильник", "Распознавание", "Журнал"]
         pages = {}
         holder = ctk.CTkFrame(tab, fg_color="transparent")
 
@@ -445,126 +451,126 @@ class App:
             pages[name] = smooth_scrolling(ctk.CTkScrollableFrame(holder, fg_color="transparent",
                                                                   scrollbar_button_color=CARD_BORDER))
 
-        page = pages["Delays"]
-        f = self._card(page, "Roblox Window Focus")
-        self._num(f, "Roblox Focus Delay (s)", "focus_delay",
-                  "Time to wait after focusing Roblox window before continuing")
-        self._num(f, "Post-Focus Extra Delay (s)", "post_focus_delay",
-                  "Additional delay after Roblox window is focused (for stability)")
+        page = pages["Задержки"]
+        f = self._card(page, "Фокус окна Roblox")
+        self._num(f, "Задержка фокуса (с)", "focus_delay",
+                  "Ожидание после переключения на окно Roblox")
+        self._num(f, "Доп. задержка после фокуса (с)", "post_focus_delay",
+                  "Дополнительная пауза для стабильности")
 
-        f = self._card(page, "Auto Buy Bait Delays")
-        self._num(f, "Press 'E' Delay (s)", "buy_e_delay", "Wait time after pressing 'E' to open shop")
-        self._num(f, "Click Delay (s)", "buy_click_delay", "Wait time between each click in bait purchase sequence")
-        self._num(f, "Type Number Delay (s)", "buy_type_delay", "Wait time after typing bait quantity")
-        self._num(f, "Anti-Detect Micro Delay (s)", "micro_delay",
-                  "Tiny delay for anti-Roblox detection mouse movement (0.05 = 50ms)")
+        f = self._card(page, "Задержки покупки наживки")
+        self._num(f, "После нажатия E (с)", "buy_e_delay", "Ожидание открытия магазина")
+        self._num(f, "Между кликами (с)", "buy_click_delay", "Пауза между кликами при покупке")
+        self._num(f, "После ввода числа (с)", "buy_type_delay", "Ожидание после ввода количества наживки")
+        self._num(f, "Микрозадержка мыши (с)", "micro_delay",
+                  "Крошечная пауза при движении мыши против детекта Roblox (0.05 = 50 мс)")
 
-        f = self._card(page, "Auto Store Devil Fruit Delays")
-        self._num(f, "Hotkey Press Delay (s)", "fruit_hotkey_delay", "Wait time after pressing devil fruit hotkey")
-        self._num(f, "Click Store Point Delay (s)", "fruit_store_delay", "Wait time after clicking store fruit point")
-        self._num(f, "First Shift Delay (s)", "fruit_shift_delay", "Wait time after first shift press")
-        self._num(f, "Backspace Delay (s)", "fruit_backspace_delay", "Wait time after backspace press")
+        f = self._card(page, "Задержки сохранения фрукта")
+        self._num(f, "После клавиши фрукта (с)", "fruit_hotkey_delay", "Ожидание после нажатия слота фрукта")
+        self._num(f, "После клика Store (с)", "fruit_store_delay", "Ожидание после клика по точке Store")
+        self._num(f, "После первого Shift (с)", "fruit_shift_delay", "Ожидание после первого нажатия Shift")
+        self._num(f, "После Backspace (с)", "fruit_backspace_delay", "Ожидание после нажатия Backspace")
 
-        f = self._card(page, "Auto Select Top Bait Delays")
-        self._num(f, "Bait Click Delay (s)", "bait_click_delay", "Wait time after clicking bait point")
+        f = self._card(page, "Задержка выбора наживки")
+        self._num(f, "После клика по наживке (с)", "bait_click_delay", "Ожидание после клика по точке наживки")
 
-        f = self._card(pages["Anti-Macro & PD"], "Anti-Macro Black Screen Detection")
-        self._num(f, "Black Screen Threshold (%)", "black_threshold",
-                  "% of screen that must be black to trigger (0.5 = 50%)")
-        self._num(f, "Key Spam Delay (s)", "black_spam_delay",
-                  "Delay between key presses when spamming to clear black screen")
-        self._num(f, "Spam Key", "black_spam_key", "Key to spam (space, e, enter, 1...)", kind=str)
-        self._num(f, "Alarm After (s)", "black_max_sec",
-                  "Ring the phone if the black screen is still there after this time")
+        f = self._card(pages["Античит и PD"], "Чёрный экран античита")
+        self._num(f, "Порог чёрного экрана", "black_threshold",
+                  "Доля чёрного экрана для срабатывания (0.5 = 50%)")
+        self._num(f, "Пауза между нажатиями (с)", "black_spam_delay",
+                  "Как часто жать клавишу, чтобы убрать чёрный экран")
+        self._num(f, "Клавиша", "black_spam_key", "Какую клавишу жать (space, e, enter, 1…)", kind=str)
+        self._num(f, "Тревога через (с)", "black_max_sec",
+                  "Позвонить, если чёрный экран не ушёл за это время")
 
-        f = self._card(page, "Fishing Stage Delays")
-        self._num(f, "Rod Selection Delay (s)", "rod_select_delay",
-                  "Wait time between hotkey presses when selecting fishing rod")
-        self._num(f, "Cursor Anti-Detect Delay (s)", "cursor_delay",
-                  "Tiny delay for anti-Roblox detection after cursor move (0.05 = 50ms)")
-        self._num(f, "Color Scan Loop Delay (s)", "scan_loop_delay",
-                  "Delay between each color scan iteration (lower = faster but more CPU)")
+        f = self._card(page, "Задержки рыбалки")
+        self._num(f, "Выбор удочки (с)", "rod_select_delay",
+                  "Пауза между нажатиями слотов при выборе удочки")
+        self._num(f, "После движения курсора (с)", "cursor_delay",
+                  "Крошечная пауза после перемещения курсора (0.05 = 50 мс)")
+        self._num(f, "Период сканирования (с)", "scan_loop_delay",
+                  "Пауза между проверками экрана в ожидании поклёвки (меньше — быстрее, но больше нагрузка)")
 
-        page = pages["Anti-Macro & PD"]
-        f = self._card(page, "PD Control Damping (Advanced)")
-        self._num(f, "Approaching Damping Multiplier", "approach_damping",
-                  "Damping strength when bar is moving TOWARD target (higher = stronger brake)")
-        self._num(f, "Chasing Damping Multiplier", "chase_damping",
-                  "Damping strength when bar is moving AWAY from target (lower = faster chase)")
-        self._num(f, "Gap Tolerance Multiplier", "gap_mult",
-                  "Multiplier for grouping dark gray pixels (gap_tolerance = white_height * THIS)")
+        page = pages["Античит и PD"]
+        f = self._card(page, "Гашение PD (продвинутое)")
+        self._num(f, "Множитель при сближении", "approach_damping",
+                  "Тормоз, когда полоса едет К рыбе (больше — сильнее тормоз)")
+        self._num(f, "Множитель при погоне", "chase_damping",
+                  "Гашение, когда рыба уходит ОТ полосы")
+        self._num(f, "Множитель разрыва", "gap_mult",
+                  "Склейка тёмно-серой полосы: допуск = высота белой черты × множитель")
 
-        f = self._card(page, "Control State Sync")
-        self._num(f, "State Resend Interval (s)", "resend_interval",
-                  "Resend mouse input every X seconds if in same state (prevents game desync)")
+        f = self._card(page, "Синхронизация кнопки")
+        self._num(f, "Повтор состояния (с)", "resend_interval",
+                  "Повторять нажатие/отпускание ЛКМ, если состояние не менялось (против рассинхрона)")
 
-        page = pages["Phone Alarm"]
-        al = self._card(page, "Phone Alarm", "Rings your phone when something goes wrong")
-        self._switch(al, "Ring my phone", "alarm_enabled", "When something goes wrong (see Watchdog)")
-        self._text(al, "ntfy server", "ntfy_server")
-        self._text(al, "ntfy topic", "ntfy_topic", "Same topic as in the ntfy app")
-        self._text(al, "Telegram bot token", "telegram_token", secret=True)
-        self._text(al, "Telegram chat id", "telegram_chat_id")
-        self._text(al, "Pushover user key", "pushover_user", secret=True)
-        self._text(al, "Pushover app token", "pushover_token", secret=True)
-        self._num(al, "Repeat Alarm Every (s)", "alarm_repeat_sec",
-                  "Repeat until you press Stop Alarm or Start (0 = once)")
-        self._switch(al, "Attach screenshot (Telegram)", "alarm_screenshot")
-        self._switch(al, "Telegram control buttons", "tg_control",
-                     "Bot buttons: screen on/off, screenshot, status, stop. Send /menu to the bot")
+        page = pages["Будильник"]
+        al = self._card(page, "Будильник", "Звонит на телефон, если что-то пошло не так")
+        self._switch(al, "Звонить на телефон", "alarm_enabled", "Когда что-то пошло не так (см. «Сторож»)")
+        self._text(al, "Сервер ntfy", "ntfy_server")
+        self._text(al, "Тема ntfy", "ntfy_topic", "Та же тема, что в приложении ntfy")
+        self._text(al, "Токен Telegram-бота", "telegram_token", secret=True)
+        self._text(al, "Chat id в Telegram", "telegram_chat_id")
+        self._text(al, "Pushover: user key", "pushover_user", secret=True)
+        self._text(al, "Pushover: app token", "pushover_token", secret=True)
+        self._num(al, "Повторять тревогу (с)", "alarm_repeat_sec",
+                  "Пока не нажмёте «Стоп тревоги» или «Старт» (0 = один раз)")
+        self._switch(al, "Прикладывать скриншот (Telegram)", "alarm_screenshot")
+        self._switch(al, "Кнопки управления в Telegram", "tg_control",
+                     "Кнопки бота: экран, скриншот, статус, стоп. Меню — команда /menu")
 
-        ma = self._card(page, "Telegram Mini App", "Live panel inside Telegram: stats, start/stop, screen, alarm")
-        self._switch(ma, "Enable Mini App", "remote_enabled",
-                     "Status and commands go through ntfy under a secret topic name")
-        self._text(ma, "Mini App URL", "webapp_url", "Page on GitHub Pages")
-        self._buttons(ma, ("Send panel to Telegram", lambda: self._on_tg("panel"), ACCENT, ACCENT_HOVER),
-                      ("New secret link", self._new_secret, FIELD, CARD_BORDER))
-        self._buttons(al, ("Test Alarm", self._test_alarm, ACCENT, ACCENT_HOVER),
-                      ("Stop Alarm", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
+        ma = self._card(page, "Мини-приложение Telegram", "Живая панель в Telegram: статистика, старт/стоп, экран, тревога")
+        self._switch(ma, "Включить мини-приложение", "remote_enabled",
+                     "Статус и команды идут через ntfy под секретным именем темы")
+        self._text(ma, "Адрес мини-приложения", "webapp_url", "Страница на GitHub Pages")
+        self._buttons(ma, ("Отправить панель", lambda: self._on_tg("panel"), ACCENT, ACCENT_HOVER),
+                      ("Новая ссылка", self._new_secret, FIELD, CARD_BORDER))
+        self._buttons(al, ("Тест тревоги", self._test_alarm, ACCENT, ACCENT_HOVER),
+                      ("Стоп тревоги", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
 
-        wd = self._card(page, "Watchdog", "When to ring")
-        self._num(wd, "Failed Casts In A Row", "wd_failed_casts",
-                  "No bite this many casts in a row: out of bait, disconnect, moved (0 = off)", kind=int)
-        self._num(wd, "No Fish Caught For (min)", "wd_no_catch_min", "Nothing caught for this long (0 = off)")
-        self._num(wd, "Window Lost Grace (s)", "wd_window_grace_sec",
-                  "Roblox closed / not focused for this long (crash, minimized)")
-        self._switch(wd, "Watch Roblox window", "wd_check_window")
-        self._switch(wd, "Stop macro on alarm", "wd_stop_on_alarm")
+        wd = self._card(page, "Сторож", "Когда звонить")
+        self._num(wd, "Забросов без поклёвки подряд", "wd_failed_casts",
+                  "Кончилась наживка, дисконнект или сдвинули персонажа (0 = выкл)", kind=int)
+        self._num(wd, "Нет рыбы дольше (мин)", "wd_no_catch_min", "Ни одной рыбы за это время (0 = выкл)")
+        self._num(wd, "Окно Roblox потеряно (с)", "wd_window_grace_sec",
+                  "Roblox закрыт или не активен дольше (вылет, окно свёрнуто)")
+        self._switch(wd, "Следить за окном Roblox", "wd_check_window")
+        self._switch(wd, "Останавливать макрос при тревоге", "wd_stop_on_alarm")
 
-        page = pages["Detection"]
-        dt = self._card(page, "Minigame Detection")
+        page = pages["Распознавание"]
+        dt = self._card(page, "Распознавание мини-игры")
         row = self._row(dt)
-        self._label(dt, row, "Track color (blue)", "Click the blue track of the minigame to re-pick it")
+        self._label(dt, row, "Цвет трека (синий)", "Нажмите «Взять» и кликните по синему треку")
         right = tk.Frame(dt, bg=CARD)
         right.grid(row=row, column=1, sticky="e", pady=4)
         self.color_swatch = ctk.CTkLabel(right, text="", width=70, height=28, corner_radius=6)
         self.color_swatch.pack(side="left", padx=(0, 6))
-        ctk.CTkButton(right, text="Pick", width=60, height=28, fg_color=FIELD, hover_color=ACCENT,
+        ctk.CTkButton(right, text="Взять", width=60, height=28, fg_color=FIELD, hover_color=ACCENT,
                       command=self._pick_color).pack(side="left")
         self._update_swatch()
-        self._num(dt, "Color Tolerance", "zone_tolerance", "How far a pixel may differ from the track color", kind=int)
-        self._num(dt, "Dark Gray Max Brightness", "dark_max", "Brightest pixel still counted as the player bar",
+        self._num(dt, "Допуск цвета", "zone_tolerance", "Насколько пиксель может отличаться от цвета трека", kind=int)
+        self._num(dt, "Яркость тёмно-серого", "dark_max", "Самый яркий пиксель, который ещё считается полосой игрока",
                   kind=int)
-        self._option(dt, "Player Bar Is", "bar_mode", ["dark", "blue"],
-                     "dark = dark gray bar on blue track (default), blue = the opposite")
-        self._switch(dt, "Require green progress bar", "require_progress",
-                     "Minigame counts only if the green bar is next to the track (stops false M1 spam)")
-        self._num(dt, "Fish Line Brightness", "fish_white_min", "Min brightness of the white fish line (0-255)",
+        self._option(dt, "Полоса игрока", "bar_mode", ["dark", "blue"],
+                     "dark — тёмно-серая на синем треке (обычно), blue — наоборот")
+        self._switch(dt, "Требовать зелёную полосу", "require_progress",
+                     "Мини-игра засчитывается, только если рядом зелёная полоса прогресса (против ложного спама ЛКМ)")
+        self._num(dt, "Яркость черты рыбы", "fish_white_min", "Минимальная яркость белой черты (0–255)",
                   kind=int)
-        self._num(dt, "Min Track Pixels", "min_zone_pixels", "Fewer blue pixels = no minigame on screen", kind=int)
-        self._num(dt, "Minigame Scan Rate (FPS)", "scan_fps", "Screen checks per second while reeling", kind=int)
+        self._num(dt, "Мин. пикселей трека", "min_zone_pixels", "Меньше синих пикселей — мини-игры на экране нет", kind=int)
+        self._num(dt, "Частота в мини-игре (FPS)", "scan_fps", "Проверок экрана в секунду во время вываживания", kind=int)
         self.area_label = tk.Label(dt, text=self._area_text(), font=TK_LABEL, bg=CARD,
                                    fg=GREEN if self.cfg["area"] else MUTED)
         self.area_label.grid(row=self._row(dt), column=0, columnspan=2, sticky="w", pady=(6, 0))
-        self._buttons(dt, ("Change Area", self.change_area, ACCENT, ACCENT_HOVER),
-                      ("Debug Preview", self._open_preview, FIELD, CARD_BORDER))
+        self._buttons(dt, ("Выбрать область", self.change_area, ACCENT, ACCENT_HOVER),
+                      ("Окно отладки", self._open_preview, FIELD, CARD_BORDER))
 
-        lg = self._card(pages["Log"], "Log")
+        lg = self._card(pages["Журнал"], "Журнал")
         self.log_box = ctk.CTkTextbox(lg, height=330, fg_color=FIELD, font=("Consolas", 11), wrap="word",
                                       state="disabled")
         self.log_box.grid(row=0, column=0, columnspan=2, sticky="ew")
-        nav.set("Delays")
-        show("Delays")
+        nav.set("Задержки")
+        show("Задержки")
 
     # ---------- действия ----------
     def _apply_topmost(self):
@@ -572,7 +578,7 @@ class App:
 
     def _area_text(self):
         a = self.cfg["area"]
-        return f"Area: X {a[0]}, Y {a[1]}, {a[2]}×{a[3]}" if a else "Area: not set (press F2 during a minigame)"
+        return f"Область: X {a[0]}, Y {a[1]}, {a[2]}×{a[3]}" if a else "Область не задана (F2 во время мини-игры)"
 
     def _overlay_open(self):
         return self._overlay is not None and not self._overlay.closed
@@ -651,7 +657,7 @@ class App:
         self.hotkey_labels[key].configure(text="...", text_color=ORANGE)
 
     def _refresh_hotkey_hint(self):
-        self.start_hint.configure(text=f"  OR PRESS {self.cfg['hotkey_start_stop'].upper()}  ")
+        self.start_hint.configure(text=f"  ИЛИ КЛАВИША {self.cfg['hotkey_start_stop'].upper()}  ")
 
     def log_threadsafe(self, text):
         self.events.put(("log", text))
@@ -850,12 +856,12 @@ class App:
             return
         was_running, self._was_running = self._was_running, running
         if running:
-            self.start_btn.configure(text="■  STOP", fg_color=RED, hover_color=RED_HOVER)
+            self.start_btn.configure(text="■  СТОП ", fg_color=RED, hover_color=RED_HOVER)
             if self.cfg.get("blackout_enabled") and not self.blackout.active:
                 delay = max(float(self.cfg.get("blackout_delay") or 0), 0)
                 self._blackout_job = self.root.after(int(delay * 1000), self._blackout_on)
         else:
-            self.start_btn.configure(text="▶  START", fg_color=GREEN, hover_color=GREEN_HOVER)
+            self.start_btn.configure(text="▶  СТАРТ ", fg_color=GREEN, hover_color=GREEN_HOVER)
             if was_running:
                 # Макрос остановился (вручную или по тревоге) — экран обратно, чтобы было видно, что случилось
                 self._blackout_off()
@@ -867,11 +873,11 @@ class App:
         runtime = int(time.time() - started) if started and self.engine.running else 0
         h, rem = divmod(runtime, 3600)
         catches = s.get("catches", 0)
-        self.stat_values["catches"].configure(text=str(catches))
-        self.stat_values["casts"].configure(text=str(s.get("casts", 0)))
-        self.stat_values["runtime"].configure(text=f"{h}:{rem // 60:02d}:{rem % 60:02d}")
+        self.stat_values["catches"].configure(text=italic_pad(catches))
+        self.stat_values["casts"].configure(text=italic_pad(s.get("casts", 0)))
+        self.stat_values["runtime"].configure(text=italic_pad(f"{h}:{rem // 60:02d}:{rem % 60:02d}"))
         rate = catches * 3600 / runtime if runtime >= 60 else 0
-        self.stat_values["rate"].configure(text=f"{rate:.0f}")
+        self.stat_values["rate"].configure(text=italic_pad(f"{rate:.0f}"))
 
     def run(self):
         self.root.mainloop()

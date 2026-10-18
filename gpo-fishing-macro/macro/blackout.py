@@ -86,7 +86,7 @@ class Blackout:
         win.attributes("-topmost", True)
         win.configure(cursor="none")
         # Еле заметная подсказка (тёмно-серым, чтобы экран оставался тёмным)
-        tk.Label(win, text="Fishing…  press any key or mouse button to wake the screen",
+        tk.Label(win, text="Рыбалка идёт…  нажмите любую клавишу или кнопку мыши, чтобы включить экран",
                  fg="#2a2a2a", bg="black", font=("Segoe UI", 12)).place(relx=0.5, rely=0.5, anchor="center")
         win.update_idletasks()
         if sys.platform == "win32":

@@ -116,7 +116,7 @@ def render_banner(width=600, height=110, scale=2):
     big = _font(int(40 * scale))
     small = _font(int(15 * scale))
     x = _slanted_text(img, (16 * scale, 14 * scale), "GPO", big, (255, 255, 255, 255))
-    _slanted_text(img, (16 * scale + x + 4 * scale, 22 * scale), "FISHING", small, _hex(HILITE))
-    _slanted_text(img, (16 * scale + x + 4 * scale, 22 * scale + small.size + 2 * scale), "MACRO", small,
+    _slanted_text(img, (16 * scale + x + 4 * scale, 22 * scale), "РЫБАЛКА", small, _hex(HILITE))
+    _slanted_text(img, (16 * scale + x + 4 * scale, 22 * scale + small.size + 2 * scale), "МАКРОС", small,
                   (255, 255, 255, 230))
     return img

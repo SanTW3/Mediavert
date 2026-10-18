@@ -183,7 +183,7 @@ class MacroEngine:
         if threshold <= 0 or black_fraction(screen.grab_monitor()) < threshold:
             return
         self.log("Чёрный экран античита — спамлю клавишей " + str(cfg["black_spam_key"]))
-        self.on_status("Clearing black screen", "orange")
+        self.on_status("Убираем чёрный экран", "orange")
         self._set_mouse(False)
         deadline = time.monotonic() + float(cfg["black_max_sec"])
         while black_fraction(screen.grab_monitor()) >= threshold:
@@ -211,7 +211,7 @@ class MacroEngine:
     # ---------- цикл ----------
     def _run(self):
         self.log("Макрос запущен")
-        self.on_status("Running", "green")
+        self.on_status("Работает", "green")
         self.watchdog.reset()
         self._emit_stats()
         try:
@@ -242,11 +242,11 @@ class MacroEngine:
         except Exception as exc:
             self.log(f"Ошибка: {exc!r}")
             self.alarms.trigger(f"Макрос упал с ошибкой: {exc!r}")
-            self.on_status("Error", "red")
+            self.on_status("Ошибка", "red")
         finally:
             self._set_mouse(False)
             if not self.alarms.active:
-                self.on_status("Stopped", "red")
+                self.on_status("Остановлен", "red")
             self.log("Макрос остановлен")
 
     def _pre_cast(self):
@@ -258,7 +258,7 @@ class MacroEngine:
         loops = self.stats["loops"]
         every = max(int(cfg["loops_per_purchase"] or 1), 1)
         if cfg.get("auto_buy_bait") and loops % every == 0:
-            self.on_status("Buying bait", "blue")
+            self.on_status("Покупка наживки", "blue")
             self._key(cfg["other_hotkey"], "rod_select_delay")  # убираем удочку, чтобы E сработала
             # E → левый → средний → ввод количества → левый → правый → средний
             self._key("e", "buy_e_delay")
@@ -279,7 +279,7 @@ class MacroEngine:
 
     def _cast(self):
         cfg = self.cfg
-        self.on_status("Casting", "blue")
+        self.on_status("Заброс", "blue")
         winput.move_to(*cfg["water_point"])
         self._delay("cursor_delay")
         self._set_mouse(True)
@@ -291,7 +291,7 @@ class MacroEngine:
         self._emit_stats()
 
     def _wait_for_bite(self):
-        self.on_status("Waiting for bite", "blue")
+        self.on_status("Ждём поклёвку", "blue")
         deadline = time.monotonic() + float(self.cfg["recast_timeout"])
         frame = max(float(self.cfg["scan_loop_delay"]), 0.005)
         seen = 0
@@ -305,7 +305,7 @@ class MacroEngine:
 
     def _play_minigame(self):
         cfg = self.cfg
-        self.on_status("Fishing", "green")
+        self.on_status("Вываживание", "green")
         ctrl = PDController(float(cfg["kp"]), float(cfg["kd"]), float(cfg["pd_clamp"]),
                             float(cfg["approach_damping"]), float(cfg["chase_damping"]))
         resend = float(cfg["resend_interval"])
@@ -342,7 +342,7 @@ class MacroEngine:
     def _post_catch(self):
         cfg = self.cfg
         if cfg.get("auto_store_fruit"):
-            self.on_status("Storing devil fruit", "blue")
+            self.on_status("Сохраняем фрукт", "blue")
             self._key(cfg["fruit_hotkey"], "fruit_hotkey_delay")
             self._click(cfg["store_point"], "fruit_store_delay")
             # Shift-lock выкл → Backspace (выбросить, если не сохранилось) → Shift-lock обратно

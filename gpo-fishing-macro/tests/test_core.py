@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import numpy as np
@@ -124,3 +125,67 @@ def test_alarm_no_channels():
     logs = []
     assert alarm.send_alarm(dict(config.DEFAULTS), "x", log=logs.append) == 0
     assert "не настроен" in logs[-1]
+
+
+def test_black_fraction():
+    from macro.detector import black_fraction
+    img = np.zeros((10, 10, 3), np.uint8)
+    img[:3] = 200
+    assert black_fraction(img) == 0.7
+
+
+def test_approach_damping_brakes():
+    plain = PDController(0.9, 0.3, 1.0, approach_damping=1.0)
+    damped = PDController(0.9, 0.3, 1.0, approach_damping=3.0)
+    # Зона быстро догоняет рыбу сверху: ошибка падает — демпфированный жмёт реже
+    holds = []
+    for ctrl in (plain, damped):
+        n = 0
+        for i in range(60):
+            n += ctrl.update(250 - i * 3, 50, 300, 1 / 60)
+        holds.append(n)
+    assert holds[1] < holds[0]
+
+
+def test_engine_full_loop(monkeypatch):
+    from macro import engine as eng
+    actions = []
+    frames = {"n": 0}
+    monkeypatch.setattr(eng.winput, "press_key", lambda k: actions.append(("key", k)))
+    monkeypatch.setattr(eng.winput, "click", lambda x, y: actions.append(("click", (x, y))))
+    def move(x, y):
+        actions.append(("move", (x, y)))
+        frames["n"] = 0  # новый заброс — мини-игра начнётся заново
+    monkeypatch.setattr(eng.winput, "move_to", move)
+    monkeypatch.setattr(eng.winput, "mouse_down", lambda: actions.append(("down",)))
+    monkeypatch.setattr(eng.winput, "mouse_up", lambda: actions.append(("up",)))
+    monkeypatch.setattr(eng.winput, "type_text", lambda t: actions.append(("type", str(t))))
+    monkeypatch.setattr(eng.winput, "focus_roblox", lambda: True)
+    monkeypatch.setattr(eng.screen, "grab_monitor", lambda: np.full((10, 10, 3), 100, np.uint8))
+
+    def grab(area):
+        # После каждого заброса: 30 кадров мини-игры, затем пусто
+        frames["n"] += 1
+        return synthetic() if frames["n"] < 30 else np.full((300, 80, 3), 24, np.uint8)
+    monkeypatch.setattr(eng.screen, "grab", grab)
+
+    fast = {k: 0.0 for k in ("focus_delay", "post_focus_delay", "buy_e_delay", "buy_click_delay",
+                             "buy_type_delay", "fruit_hotkey_delay", "fruit_store_delay", "fruit_shift_delay",
+                             "fruit_backspace_delay", "bait_click_delay", "rod_select_delay", "cursor_delay",
+                             "fish_end_delay", "cast_hold")}
+    cfg = dict(config.DEFAULTS, **fast, area=[0, 0, 80, 300], water_point=[500, 400], scan_loop_delay=0.001,
+               scan_fps=240, auto_buy_bait=True, buy_left=[1, 1], buy_middle=[2, 2], buy_right=[3, 3],
+               loops_per_purchase=5, auto_store_fruit=True, store_point=[9, 9], wd_check_window=False,
+               alarm_enabled=False)
+    e = eng.MacroEngine(cfg, log=lambda t: None)
+    e.start()
+    deadline = time.time() + 10
+    while e.stats["catches"] < 2 and time.time() < deadline:
+        time.sleep(0.02)
+    e.stop()
+    e._thread.join(2)
+    assert e.stats["catches"] >= 2
+    keys = [a[1] for a in actions if a[0] == "key"]
+    assert keys[:3] == ["2", "e", "2"] and "7" in keys and "backspace" in keys
+    assert ("type", "5") in actions and ("click", (9, 9)) in actions
+    assert actions.count(("down",)) == actions.count(("up",))  # мышь никогда не остаётся зажатой

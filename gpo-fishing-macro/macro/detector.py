@@ -93,3 +93,8 @@ def detect(rgb, zone_color=(85, 170, 255), tolerance=40, white_min=200, min_zone
     bar_bottom = max(bar_bottom, zone_bottom)
 
     return Detection(zone_top, zone_bottom, bar_top, bar_bottom, fish_y, x0, x1)
+
+
+def black_fraction(rgb, level=20):
+    """Доля почти чёрных пикселей (античит GPO затемняет экран)."""
+    return float((rgb.max(axis=2) <= level).mean())

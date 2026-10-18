@@ -32,3 +32,12 @@ def screenshot_png():
     sct = _sct()
     shot = sct.grab(sct.monitors[0])
     return mss.tools.to_png(shot.rgb, shot.size)
+
+
+def grab_monitor(step=8):
+    """Основной монитор, прореженный в step раз — для проверки на чёрный экран."""
+    sct = _sct()
+    mon = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+    shot = sct.grab(mon)
+    bgra = np.frombuffer(shot.raw, dtype=np.uint8).reshape(shot.height, shot.width, 4)
+    return bgra[::step, ::step, 2::-1]

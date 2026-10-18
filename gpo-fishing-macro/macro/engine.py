@@ -4,7 +4,7 @@ import time
 
 from . import alarm, screen, winput
 from .controller import PDController
-from .detector import detect
+from .detector import black_fraction, detect
 from .watchdog import Watchdog
 
 
@@ -145,13 +145,43 @@ class MacroEngine:
             winput.mouse_up()
         self._mouse_held = held
 
-    def _click(self, point):
-        winput.click(*point)
-        self._sleep(float(self.cfg["click_delay"]))
+    def _delay(self, key):
+        self._sleep(float(self.cfg[key]))
 
-    def _key(self, name):
+    def _click(self, point, delay_key):
+        winput.click(*point)
+        self._delay(delay_key)
+
+    def _key(self, name, delay_key):
         winput.press_key(name)
-        self._sleep(float(self.cfg["click_delay"]))
+        self._delay(delay_key)
+
+    def _focus_roblox(self):
+        """Roblox Window Focus: выводим окно игры вперёд перед началом работы."""
+        if not winput.focus_roblox():
+            self.log("Окно Roblox не найдено")
+            return False
+        self._delay("focus_delay")
+        self._delay("post_focus_delay")
+        return True
+
+    def _check_black_screen(self):
+        """Anti-Macro Black Screen: спамим клавишей, пока экран не посветлеет; не вышло — тревога."""
+        cfg = self.cfg
+        threshold = float(cfg["black_threshold"])
+        if threshold <= 0 or black_fraction(screen.grab_monitor()) < threshold:
+            return
+        self.log("Чёрный экран античита — спамлю клавишей " + str(cfg["black_spam_key"]))
+        self.on_status("Clearing black screen", "orange")
+        self._set_mouse(False)
+        deadline = time.monotonic() + float(cfg["black_max_sec"])
+        while black_fraction(screen.grab_monitor()) >= threshold:
+            if time.monotonic() > deadline:
+                self._raise_alarm(f"Чёрный экран не уходит {cfg['black_max_sec']:g} с — нужна ваша помощь")
+                return
+            winput.press_key(cfg["black_spam_key"])
+            self._delay("black_spam_delay")
+        self.log("Чёрный экран убран")
 
     def _grab_detect(self):
         cfg = self.cfg
@@ -171,7 +201,8 @@ class MacroEngine:
         self.watchdog.reset()
         self._emit_stats()
         try:
-            self._sleep(1.0)  # время переключиться в окно Roblox
+            winput.micro_delay = float(self.cfg["micro_delay"])
+            self._focus_roblox()
             while True:
                 self._pre_cast()
                 self._cast()
@@ -202,31 +233,34 @@ class MacroEngine:
 
     def _pre_cast(self):
         cfg = self.cfg
+        winput.micro_delay = float(cfg["micro_delay"])
+        if winput.IS_WINDOWS and winput.foreground_title() != "Roblox":
+            self._focus_roblox()
+        self._check_black_screen()
         loops = self.stats["loops"]
         every = max(int(cfg["loops_per_purchase"] or 1), 1)
         if cfg.get("auto_buy_bait") and loops % every == 0:
             self.on_status("Buying bait", "blue")
-            self._key(cfg["other_hotkey"])      # убираем удочку, чтобы E сработала
-            self._key("e")
-            self._sleep(0.5)
-            self._click(cfg["buy_left"])
-            self._click(cfg["buy_middle"])
+            self._key(cfg["other_hotkey"], "rod_select_delay")  # убираем удочку, чтобы E сработала
+            self._key("e", "buy_e_delay")
+            self._click(cfg["buy_left"], "buy_click_delay")
+            self._click(cfg["buy_middle"], "buy_click_delay")
             if cfg.get("buy_type_amount"):
                 winput.type_text(every)
-                self._sleep(float(cfg["click_delay"]))
-            self._click(cfg["buy_right"])
+                self._delay("buy_type_delay")
+            self._click(cfg["buy_right"], "buy_click_delay")
         # Сначала «что-то другое», потом удочку: так удочка гарантированно в руках,
         # а не снята повторным нажатием той же клавиши
-        self._key(cfg["other_hotkey"])
-        self._key(cfg["rod_hotkey"])
+        self._key(cfg["other_hotkey"], "rod_select_delay")
+        self._key(cfg["rod_hotkey"], "rod_select_delay")
         if cfg.get("auto_select_bait"):
-            self._click(cfg["bait_point"])
+            self._click(cfg["bait_point"], "bait_click_delay")
 
     def _cast(self):
         cfg = self.cfg
         self.on_status("Casting", "blue")
         winput.move_to(*cfg["water_point"])
-        self._sleep(0.1)
+        self._delay("cursor_delay")
         self._set_mouse(True)
         try:
             self._sleep(float(cfg["cast_hold"]))
@@ -238,7 +272,7 @@ class MacroEngine:
     def _wait_for_bite(self):
         self.on_status("Waiting for bite", "blue")
         deadline = time.monotonic() + float(self.cfg["recast_timeout"])
-        frame = 1.0 / max(int(self.cfg["scan_fps"]), 5)
+        frame = max(float(self.cfg["scan_loop_delay"]), 0.005)
         seen = 0
         while time.monotonic() < deadline:
             self._check()
@@ -251,7 +285,8 @@ class MacroEngine:
     def _play_minigame(self):
         cfg = self.cfg
         self.on_status("Fishing", "green")
-        ctrl = PDController(float(cfg["kp"]), float(cfg["kd"]), float(cfg["pd_clamp"]))
+        ctrl = PDController(float(cfg["kp"]), float(cfg["kd"]), float(cfg["pd_clamp"]),
+                            float(cfg["approach_damping"]))
         frame = 1.0 / max(int(cfg["scan_fps"]), 5)
         last_fish = None
         lost_since = None
@@ -283,6 +318,10 @@ class MacroEngine:
     def _post_catch(self):
         cfg = self.cfg
         if cfg.get("auto_store_fruit"):
-            self._key(cfg["fruit_hotkey"])
-            self._sleep(0.3)
-            self._click(cfg["store_point"])
+            self.on_status("Storing devil fruit", "blue")
+            self._key(cfg["fruit_hotkey"], "fruit_hotkey_delay")
+            self._click(cfg["store_point"], "fruit_store_delay")
+            # Shift-lock выкл → Backspace (выбросить, если не сохранилось) → Shift-lock обратно
+            self._key("shift", "fruit_shift_delay")
+            self._key("backspace", "fruit_backspace_delay")
+            self._key("shift", "fruit_shift_delay")

@@ -229,9 +229,27 @@ class App:
         section("auto_select_bait", "Auto Select Top Bait", bait)
 
     # --- Literally Everything Else ---
+    def _adv(self, parent, label, key, hint, kind=float):
+        """Строка как в оригинале: подпись слева, поле справа, серая подсказка «↳ …» под ними."""
+        row = parent.grid_size()[1]
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(10, 10), pady=(6, 0))
+        ttk.Entry(parent, width=9, textvariable=self.var(key, kind)).grid(row=row, column=1, sticky="e", padx=(0, 4))
+        tk.Label(parent, text="↳ " + hint, fg="gray", font=("Segoe UI", 8)).grid(
+            row=row + 1, column=0, columnspan=2, sticky="w", padx=(30, 0))
+
+    def _section(self, parent, title):
+        frame = ttk.LabelFrame(parent, text=title, padding=8)
+        frame.pack(fill="x", pady=(0, 10), padx=(0, 4))
+        frame.columnconfigure(0, weight=1)
+        return frame
+
     def _tab_else(self, tab):
-        canvas = tk.Canvas(tab, highlightthickness=0)
-        sb = ttk.Scrollbar(tab, orient="vertical", command=canvas.yview)
+        tk.Label(tab, text="⚠ DON'T CHANGE IF YOU DON'T KNOW WHAT YOU'RE DOING", fg="red",
+                 font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x", pady=(0, 6))
+        body = ttk.Frame(tab)
+        body.pack(fill="both", expand=True)
+        canvas = tk.Canvas(body, highlightthickness=0)
+        sb = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
         inner = ttk.Frame(canvas)
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         win = canvas.create_window((0, 0), window=inner, anchor="nw")
@@ -241,62 +259,103 @@ class App:
         sb.pack(side="right", fill="y")
         canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
 
+        f = self._section(inner, "Roblox Window Focus")
+        self._adv(f, "Roblox Focus Delay (s):", "focus_delay",
+                  "Time to wait after focusing Roblox window before continuing")
+        self._adv(f, "Post-Focus Extra Delay (s):", "post_focus_delay",
+                  "Additional delay after Roblox window is focused (for stability)")
+
+        f = self._section(inner, "Auto Buy Bait Delays")
+        self._adv(f, "Press 'E' Delay (s):", "buy_e_delay", "Wait time after pressing 'E' to open shop")
+        self._adv(f, "Click Delay (s):", "buy_click_delay", "Wait time between each click in bait purchase sequence")
+        self._adv(f, "Type Number Delay (s):", "buy_type_delay", "Wait time after typing bait quantity")
+        self._adv(f, "Anti-Detect Micro Delay (s):", "micro_delay",
+                  "Tiny delay for anti-Roblox detection mouse movement (0.05 = 50ms)")
+
+        f = self._section(inner, "Auto Store Devil Fruit Delays")
+        self._adv(f, "Hotkey Press Delay (s):", "fruit_hotkey_delay", "Wait time after pressing devil fruit hotkey")
+        self._adv(f, "Click Store Point Delay (s):", "fruit_store_delay", "Wait time after clicking store fruit point")
+        self._adv(f, "First Shift Delay (s):", "fruit_shift_delay", "Wait time after first shift press")
+        self._adv(f, "Backspace Delay (s):", "fruit_backspace_delay", "Wait time after backspace press")
+
+        f = self._section(inner, "Auto Select Top Bait Delays")
+        self._adv(f, "Bait Click Delay (s):", "bait_click_delay", "Wait time after clicking bait point")
+
+        f = self._section(inner, "Anti-Macro Black Screen Detection")
+        self._adv(f, "Black Screen Threshold (%):", "black_threshold",
+                  "% of screen that must be black to trigger (0.5 = 50%)")
+        self._adv(f, "Key Spam Delay (s):", "black_spam_delay",
+                  "Delay between key presses when spamming to clear black screen")
+        self._adv(f, "Spam Key:", "black_spam_key", "Key to spam (space, e, enter, 1...)", kind=str)
+        self._adv(f, "Alarm After (s):", "black_max_sec",
+                  "Ring the phone if the black screen is still there after this time")
+
+        f = self._section(inner, "Fishing Stage Delays")
+        self._adv(f, "Rod Selection Delay (s):", "rod_select_delay",
+                  "Wait time between hotkey presses when selecting fishing rod")
+        self._adv(f, "Cursor Anti-Detect Delay (s):", "cursor_delay",
+                  "Tiny delay for anti-Roblox detection after cursor move (0.05 = 50ms)")
+        self._adv(f, "Color Scan Loop Delay (s):", "scan_loop_delay",
+                  "Delay between each color scan iteration (lower = faster but more CPU)")
+
+        f = self._section(inner, "PD Control Damping (Advanced)")
+        self._adv(f, "Approaching Damping Multiplier:", "approach_damping",
+                  "Extra Kd when the zone is already moving towards the fish (less overshoot)")
+
         # Будильник
-        al = ttk.LabelFrame(inner, text="Phone Alarm", padding=8)
-        al.pack(fill="x", pady=(0, 8))
+        al = self._section(inner, "Phone Alarm")
         ttk.Checkbutton(al, text="Ring my phone if something goes wrong",
                         variable=self.var("alarm_enabled", bool)).grid(row=0, column=0, columnspan=3, sticky="w")
-        self._entry(al, 1, "ntfy server:", "ntfy_server")
-        self._entry(al, 2, "ntfy topic:", "ntfy_topic")
-        self._entry(al, 3, "Telegram bot token:", "telegram_token", show="•")
-        self._entry(al, 4, "Telegram chat id:", "telegram_chat_id")
-        self._entry(al, 5, "Pushover user key:", "pushover_user", show="•")
-        self._entry(al, 6, "Pushover app token:", "pushover_token", show="•")
-        self._spin(al, 7, "Repeat alarm every:", "alarm_repeat_sec", 0, 3600, 10, unit="s (0 = once)")
+        self._entry(al, 1, "ntfy server:", "ntfy_server", width=24)
+        self._entry(al, 2, "ntfy topic:", "ntfy_topic", width=24)
+        self._entry(al, 3, "Telegram bot token:", "telegram_token", width=24, show="•")
+        self._entry(al, 4, "Telegram chat id:", "telegram_chat_id", width=24)
+        self._entry(al, 5, "Pushover user key:", "pushover_user", width=24, show="•")
+        self._entry(al, 6, "Pushover app token:", "pushover_token", width=24, show="•")
+        self._adv(al, "Repeat Alarm Every (s):", "alarm_repeat_sec", "Repeat until you press Stop Alarm or F1 (0 = once)")
         ttk.Checkbutton(al, text="Attach screenshot (Telegram)",
-                        variable=self.var("alarm_screenshot", bool)).grid(row=8, column=0, columnspan=3, sticky="w")
+                        variable=self.var("alarm_screenshot", bool)).grid(row=9, column=0, columnspan=3, sticky="w")
         btns = ttk.Frame(al)
-        btns.grid(row=9, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        btns.grid(row=10, column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Button(btns, text="Test Alarm", command=self._test_alarm).pack(side="left", padx=(10, 6))
         ttk.Button(btns, text="Stop Alarm", command=self.engine.alarms.acknowledge).pack(side="left")
 
         # Сторож
-        wd = ttk.LabelFrame(inner, text="Watchdog (when to ring)", padding=8)
-        wd.pack(fill="x", pady=(0, 8))
-        self._spin(wd, 0, "Failed casts in a row (0 = off):", "wd_failed_casts", 0, 100, 1, kind=int)
-        self._spin(wd, 1, "No fish caught for (0 = off):", "wd_no_catch_min", 0, 600, 1, unit="min")
-        ttk.Checkbutton(wd, text="Roblox window closed / not focused for",
-                        variable=self.var("wd_check_window", bool)).grid(row=2, column=0, sticky="w", padx=(6, 0))
-        ttk.Spinbox(wd, from_=5, to=600, increment=5, width=9,
-                    textvariable=self.var("wd_window_grace_sec")).grid(row=2, column=1, sticky="w")
-        ttk.Label(wd, text="s").grid(row=2, column=2, sticky="w", padx=6)
+        wd = self._section(inner, "Watchdog (When To Ring)")
+        self._adv(wd, "Failed Casts In A Row:", "wd_failed_casts",
+                  "No bite this many casts in a row: out of bait, disconnect, moved (0 = off)", kind=int)
+        self._adv(wd, "No Fish Caught For (min):", "wd_no_catch_min", "Nothing caught for this long (0 = off)")
+        self._adv(wd, "Window Lost Grace (s):", "wd_window_grace_sec",
+                  "Roblox closed / not focused for this long (crash, minimized)")
+        row = wd.grid_size()[1]
+        ttk.Checkbutton(wd, text="Watch Roblox window",
+                        variable=self.var("wd_check_window", bool)).grid(row=row, column=0, sticky="w", padx=(6, 0))
         ttk.Checkbutton(wd, text="Stop macro on alarm",
-                        variable=self.var("wd_stop_on_alarm", bool)).grid(row=3, column=0, columnspan=3,
-                                                                          sticky="w", padx=(6, 0))
+                        variable=self.var("wd_stop_on_alarm", bool)).grid(row=row + 1, column=0, sticky="w",
+                                                                          padx=(6, 0))
 
         # Распознавание
-        dt = ttk.LabelFrame(inner, text="Detection", padding=8)
-        dt.pack(fill="x", pady=(0, 8))
+        dt = self._section(inner, "Minigame Detection")
         ttk.Label(dt, text="Zone color:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=3)
         self.color_swatch = tk.Label(dt, width=10, relief="solid", bd=1)
-        self.color_swatch.grid(row=0, column=1, sticky="w")
-        ttk.Button(dt, text="Pick from screen", command=self._pick_color).grid(row=0, column=2, padx=6)
+        self.color_swatch.grid(row=0, column=1, sticky="e", padx=(0, 4))
+        ttk.Button(dt, text="Pick from screen", command=self._pick_color).grid(row=1, column=1, sticky="e",
+                                                                               padx=(0, 4), pady=(2, 0))
         self._update_swatch()
-        self._spin(dt, 1, "Color tolerance:", "zone_tolerance", 0, 255, 5, kind=int)
-        self._spin(dt, 2, "Fish line brightness:", "fish_white_min", 0, 255, 5, kind=int)
-        self._spin(dt, 3, "Min zone pixels:", "min_zone_pixels", 1, 10000, 5, kind=int)
-        self._spin(dt, 4, "Scan rate:", "scan_fps", 5, 240, 5, kind=int, unit="FPS")
-        self._spin(dt, 5, "Click delay:", "click_delay", 0.05, 5, 0.05, unit="s")
+        self._adv(dt, "Color Tolerance:", "zone_tolerance", "How far a pixel may differ from the zone color", kind=int)
+        self._adv(dt, "Fish Line Brightness:", "fish_white_min", "Min brightness of the white fish line (0-255)",
+                  kind=int)
+        self._adv(dt, "Min Zone Pixels:", "min_zone_pixels", "Fewer blue pixels = no minigame on screen", kind=int)
+        self._adv(dt, "Minigame Scan Rate (FPS):", "scan_fps", "Screen checks per second while reeling", kind=int)
         area_row = ttk.Frame(dt)
-        area_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        area_row.grid(row=dt.grid_size()[1], column=0, columnspan=2, sticky="w", pady=(6, 0))
         ttk.Button(area_row, text="Change Area", command=self.change_area).pack(side="left", padx=(10, 6))
         ttk.Button(area_row, text="Debug Preview", command=self._open_preview).pack(side="left")
         self.area_label = tk.Label(dt, text=self._area_text(), fg="green" if self.cfg["area"] else "gray")
-        self.area_label.grid(row=7, column=0, columnspan=3, sticky="w", padx=10)
+        self.area_label.grid(row=dt.grid_size()[1], column=0, columnspan=2, sticky="w", padx=10)
 
         # Статистика и лог
-        st = ttk.LabelFrame(inner, text="Stats & Log", padding=8)
-        st.pack(fill="both", expand=True)
+        st = self._section(inner, "Stats & Log")
         self.stats_label = ttk.Label(st, text="Casts: 0   Catches: 0   Runtime: 0:00:00")
         self.stats_label.pack(anchor="w")
         self.log_box = tk.Text(st, height=8, wrap="word", state="disabled", font=("Consolas", 9))

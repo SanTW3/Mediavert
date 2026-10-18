@@ -2,10 +2,11 @@
 
 
 class PDController:
-    def __init__(self, kp=0.9, kd=0.3, clamp=1.0):
+    def __init__(self, kp=0.9, kd=0.3, clamp=1.0, approach_damping=2.0):
         self.kp = kp
         self.kd = kd
         self.clamp = clamp
+        self.approach_damping = approach_damping
         self.reset()
 
     def reset(self):
@@ -25,7 +26,9 @@ class PDController:
             derivative = (error - self._prev_error) / dt
         self._prev_error = error
 
-        u = self.kp * error + self.kd * derivative
+        # Зона уже едет к рыбе (ошибка уменьшается) — тормозим сильнее, чтобы не перелететь
+        kd = self.kd * self.approach_damping if error * derivative < 0 else self.kd
+        u = self.kp * error + kd * derivative
         u = max(-self.clamp, min(self.clamp, u))
 
         # Сигма-дельта ШИМ: доля кадров с зажатой кнопкой = (u + clamp) / (2 * clamp)

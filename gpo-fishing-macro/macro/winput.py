@@ -10,6 +10,9 @@ import time
 
 IS_WINDOWS = sys.platform == "win32"
 
+# «Anti-Detect Micro Delay»: пауза между абсолютным перемещением и подёргиванием курсора
+micro_delay = 0.05
+
 INPUT_MOUSE = 0
 INPUT_KEYBOARD = 1
 MOUSEEVENTF_MOVE = 0x0001
@@ -26,7 +29,8 @@ SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
 VK = {str(d): 0x30 + d for d in range(10)}
 VK.update({chr(c).lower(): c for c in range(ord("A"), ord("Z") + 1)})
 VK.update({f"f{i}": 0x6F + i for i in range(1, 13)})
-VK.update({"enter": 0x0D, "esc": 0x1B, "space": 0x20, "backspace": 0x08, "tab": 0x09})
+VK.update({"enter": 0x0D, "esc": 0x1B, "space": 0x20, "backspace": 0x08, "tab": 0x09,
+           "shift": 0x10, "alt": 0x12})
 
 
 if IS_WINDOWS:
@@ -100,7 +104,7 @@ def move_to(x, y):
     flags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
     _send(_mouse(flags, nx, ny))
     # Roblox обновляет позицию курсора только после относительного движения
-    time.sleep(0.01)
+    time.sleep(micro_delay)
     _send(_mouse(MOUSEEVENTF_MOVE, 1, 0))
     _send(_mouse(MOUSEEVENTF_MOVE, -1, 0))
 
@@ -118,7 +122,7 @@ def mouse_up():
 def click(x=None, y=None, hold=0.05):
     if x is not None and y is not None:
         move_to(x, y)
-        time.sleep(0.05)
+        time.sleep(micro_delay)
     mouse_down()
     time.sleep(hold)
     mouse_up()
@@ -155,3 +159,19 @@ def roblox_window_exists():
     if not IS_WINDOWS:
         return True
     return bool(user32.FindWindowW(None, "Roblox"))
+
+
+def focus_roblox():
+    """Выводит окно Roblox на передний план. True, если окно найдено."""
+    if not IS_WINDOWS:
+        return True
+    hwnd = user32.FindWindowW(None, "Roblox")
+    if not hwnd:
+        return False
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    # Windows не даёт фоновому процессу забрать фокус, пока не было ввода — нажимаем Alt
+    _send(_key(VK["alt"]))
+    _send(_key(VK["alt"], up=True))
+    user32.SetForegroundWindow(hwnd)
+    return True

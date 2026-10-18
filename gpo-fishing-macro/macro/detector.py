@@ -74,6 +74,10 @@ def detect(rgb, zone_color=(85, 170, 255), tolerance=40, white_min=200, min_zone
     if run is None:
         return None
     x0, x1 = run
+    h, w = blue_mask.shape
+    # Трек мини-игры — узкая вертикальная полоса. Широкое синее пятно — это вода или небо
+    if x1 - x0 + 1 > max(w * 0.3, 6):
+        return None
     cols = img[:, x0:x1 + 1]
     blue_rows = blue_mask[:, x0:x1 + 1].mean(axis=1) >= 0.5
 
@@ -109,6 +113,9 @@ def detect(rgb, zone_color=(85, 170, 255), tolerance=40, white_min=200, min_zone
     bar_top, bar_bottom = trun if trun else (zone_top, zone_bottom)
     bar_top = min(bar_top, zone_top)
     bar_bottom = max(bar_bottom, zone_bottom)
+    # Трек занимает большую часть высоты выбранной области; короткий обрывок — ложное срабатывание
+    if bar_bottom - bar_top < h * 0.4:
+        return None
 
     return Detection(zone_top, zone_bottom, bar_top, bar_bottom, fish_y, x0, x1)
 

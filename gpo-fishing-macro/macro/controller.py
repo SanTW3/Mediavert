@@ -12,7 +12,6 @@ class PDController:
 
     def reset(self):
         self._prev_error = None
-        self._acc = 0.0
 
     def update(self, zone_center, fish_y, bar_height, dt):
         """Возвращает True, если ЛКМ должна быть зажата в этом кадре.
@@ -38,10 +37,6 @@ class PDController:
         u = self.kp * error + kd * derivative
         u = max(-self.clamp, min(self.clamp, u))
 
-        # Сигма-дельта ШИМ: доля кадров с зажатой кнопкой = (u + clamp) / (2 * clamp)
-        duty = (u + self.clamp) / (2 * self.clamp) if self.clamp > 0 else (1.0 if u > 0 else 0.0)
-        self._acc += duty
-        if self._acc >= 1.0:
-            self._acc -= 1.0
-            return True
-        return False
+        # Держим ЛКМ, пока регулятор тянет полосу вверх, иначе отпускаем.
+        # Никакого ШИМ: частые нажатия-отпускания игра воспринимает как спам кликов
+        return u > 0

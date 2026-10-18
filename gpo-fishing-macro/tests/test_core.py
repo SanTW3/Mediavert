@@ -55,6 +55,15 @@ def test_detect_synthetic_and_fish_inside_zone():
 
 def test_detect_nothing():
     assert detect(np.full((200, 200, 3), 30, np.uint8)) is None
+    # Синяя вода на всю область — не мини-игра
+    water = np.full((200, 200, 3), (85, 170, 255), np.uint8)
+    water[50:90, :] = (26, 26, 28)
+    assert detect(water) is None
+    # Короткий синий обрывок в углу — тоже нет
+    junk = np.full((300, 80, 3), (60, 30, 20), np.uint8)
+    junk[10:60, 30:42] = (85, 170, 255)
+    junk[20:40, 30:42] = (26, 26, 28)
+    assert detect(junk) is None
     det = detect(synthetic(fish=None))
     assert det is not None and det.fish_y is None
 
@@ -68,10 +77,13 @@ def test_pd_holds_when_fish_above():
     assert holds < 15
 
 
-def test_pd_balanced_when_centered():
+def test_pd_no_click_spam():
+    # Рыба стоит выше полосы: кнопка держится непрерывно, без нажатий-отпусканий
     ctrl = PDController(0.9, 0.3, 1.0)
-    holds = sum(ctrl.update(150, 150, 300, 1 / 60) for _ in range(100))
-    assert 45 <= holds <= 55
+    states = [ctrl.update(250, 100, 300, 1 / 60) for _ in range(60)]
+    assert all(states)
+    ctrl.reset()
+    assert not ctrl.update(150, 150, 300, 1 / 60)  # рыба в центре — отпускаем
 
 
 def test_chase_damping_scales_kd():
@@ -210,7 +222,7 @@ def test_engine_full_loop(monkeypatch):
                              "fruit_backspace_delay", "bait_click_delay", "rod_select_delay", "cursor_delay",
                              "fish_end_delay", "cast_hold")}
     cfg = dict(config.DEFAULTS, **fast, area=[0, 0, 80, 300], water_point=[500, 400], scan_loop_delay=0.001,
-               scan_fps=240, auto_buy_bait=True, buy_left=[1, 1], buy_middle=[2, 2], buy_right=[3, 3],
+               scan_fps=240, auto_buy_bait=True, buy_left=[1, 1], buy_middle=[2, 2],
                loops_per_purchase=5, auto_store_fruit=True, store_point=[9, 9], wd_check_window=False,
                alarm_enabled=False)
     e = eng.MacroEngine(cfg, log=lambda t: None)
@@ -224,4 +236,8 @@ def test_engine_full_loop(monkeypatch):
     keys = [a[1] for a in actions if a[0] == "key"]
     assert keys[:3] == ["2", "e", "2"] and "7" in keys and "backspace" in keys
     assert ("type", "5") in actions and ("click", (9, 9)) in actions
+    # Покупка: E → левый → средний → число → левый → средний
+    i = actions.index(("key", "e"))
+    assert actions[i + 1:i + 6] == [("click", (1, 1)), ("click", (2, 2)), ("type", "5"),
+                                    ("click", (1, 1)), ("click", (2, 2))]
     assert actions.count(("down",)) == actions.count(("up",))  # мышь никогда не остаётся зажатой

@@ -99,7 +99,7 @@ class MacroEngine:
             problems.append("область мини-игры (F2)")
         if not cfg.get("water_point"):
             problems.append("точка воды (Casting)")
-        if cfg.get("auto_buy_bait") and not all(cfg.get(k) for k in ("buy_left", "buy_middle", "buy_right")):
+        if cfg.get("auto_buy_bait") and not all(cfg.get(k) for k in ("buy_left", "buy_middle")):
             problems.append("точки покупки наживки")
         if cfg.get("auto_store_fruit") and not cfg.get("store_point"):
             problems.append("точка Store для фрукта")
@@ -221,6 +221,10 @@ class MacroEngine:
                              f"({self.watchdog.failed_casts} подряд)")
                     self._check()
                     continue
+                det = self.last_detection[1] if self.last_detection else None
+                if det:
+                    self.log(f"Мини-игра найдена: полоса {det.zone_top}-{det.zone_bottom}, "
+                             f"трек {det.bar_top}-{det.bar_bottom}, колонки {det.bar_x0}-{det.bar_x1}")
                 self._play_minigame()
                 self._sleep(float(self.cfg["fish_end_delay"]))
                 self.stats["catches"] += 1
@@ -251,13 +255,15 @@ class MacroEngine:
         if cfg.get("auto_buy_bait") and loops % every == 0:
             self.on_status("Buying bait", "blue")
             self._key(cfg["other_hotkey"], "rod_select_delay")  # убираем удочку, чтобы E сработала
+            # E → левый → средний → ввод количества → левый → средний
             self._key("e", "buy_e_delay")
             self._click(cfg["buy_left"], "buy_click_delay")
             self._click(cfg["buy_middle"], "buy_click_delay")
             if cfg.get("buy_type_amount"):
                 winput.type_text(every)
                 self._delay("buy_type_delay")
-            self._click(cfg["buy_right"], "buy_click_delay")
+            self._click(cfg["buy_left"], "buy_click_delay")
+            self._click(cfg["buy_middle"], "buy_click_delay")
         # Сначала «что-то другое», потом удочку: так удочка гарантированно в руках,
         # а не снята повторным нажатием той же клавиши
         self._key(cfg["other_hotkey"], "rod_select_delay")

@@ -86,8 +86,17 @@ class Blackout:
         win.attributes("-topmost", True)
         win.configure(cursor="none")
         # Еле заметная подсказка (тёмно-серым, чтобы экран оставался тёмным)
-        tk.Label(win, text="Рыбалка идёт…  нажмите любую клавишу или кнопку мыши, чтобы включить экран",
-                 fg="#2a2a2a", bg="black", font=("Segoe UI", 12)).place(relx=0.5, rely=0.5, anchor="center")
+        hint = tk.Label(win, text="Рыбалка идёт…  нажмите любую клавишу или кнопку мыши, чтобы включить экран",
+                        fg="#2a2a2a", bg="black", font=("Segoe UI", 12))
+        # По центру монитора с игрой: по центру всех мониторов надпись разрезало стыком экранов
+        try:
+            mon = _roblox_monitor() if sys.platform == "win32" else None
+        except Exception:
+            mon = None
+        if mon and x <= mon[0] and y <= mon[1]:
+            hint.place(x=mon[0] - x + mon[2] // 2, y=mon[1] - y + mon[3] // 2, anchor="center")
+        else:
+            hint.place(relx=0.5, rely=0.5, anchor="center")
         win.update_idletasks()
         if sys.platform == "win32":
             try:

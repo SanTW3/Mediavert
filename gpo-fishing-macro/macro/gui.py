@@ -782,16 +782,15 @@ class App:
         }
 
     def _tick_hud(self, once=False):
-        """HUD видно всё время, кроме выбора области/точки (там своя рамка)."""
+        """HUD видно всё время, кроме выбора области/точки (там своя рамка) и чёрного экрана."""
         try:
-            want = bool(self.cfg.get("hud_enabled")) and not self._overlay_open()
+            want = (bool(self.cfg.get("hud_enabled")) and not self._overlay_open()
+                    and not self.blackout.active)
             if want and not self.hud.visible:
                 self.hud.show()
             elif not want and self.hud.visible:
                 self.hud.hide()
             if self.hud.visible:
-                if self.blackout.active:
-                    self.hud.win.lift()      # над чёрным экраном
                 self.hud.update(self._hud_data())
         except Exception as exc:
             self.log(f"HUD: ошибка {exc!r} — выключаю")

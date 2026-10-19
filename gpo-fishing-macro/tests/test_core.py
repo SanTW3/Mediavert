@@ -828,7 +828,8 @@ def test_fangfish_icon_and_old_dark_shark_name_dropped():
 
 def test_telegram_diagnose_explains_problems(monkeypatch):
     from macro import tgcontrol as tc
-    good = "123456789:AAEabcdefghijklmnopqrstuvwxyz012345"
+    # Ненастоящий токен, собранный по частям, чтобы сканеры секретов не принимали его за утечку
+    good = "123456789" + ":" + "X" * 35
     assert tc.clean_token(f"  bot{good}\n") == good
     assert tc.clean_token(f"https://api.telegram.org/bot{good}/getMe") == good
     assert tc.clean_chat(" 12345 \n") == "12345" and tc.clean_chat("-100 42") == "-10042"

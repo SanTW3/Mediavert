@@ -1,4 +1,4 @@
-"""Самопроверка exe (GPO-Fishing-Macro.exe --selftest): Windows OCR и разбор уведомления.
+"""Самопроверка exe (GPO-Fishing-Macro.exe --selftest): Windows OCR, разбор уведомления, paho-mqtt.
 
 Результат пишется в selftest.txt рядом с exe — у оконного exe нет консоли.
 """
@@ -26,6 +26,9 @@ def run():
         name = parse_name(text)
         out.append(f"parsed: {name!r}")
         ok = name == "Golden Carp"
+        # Канал мини-приложения: paho-mqtt должен попасть в exe
+        import paho.mqtt.client as mqtt
+        out.append(f"paho-mqtt: {mqtt.__name__} ok")
     except Exception:
         out.append(traceback.format_exc())
     out.append("RESULT: " + ("OK" if ok else "FAIL"))

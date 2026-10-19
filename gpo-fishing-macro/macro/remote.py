@@ -1,4 +1,7 @@
-"""Связь с мини-приложением Telegram через ntfy, без своего сервера.
+"""Связь с мини-приложением Telegram без своего сервера.
+
+Основной канал — публичный MQTT-брокер (mqttlink.py): без лимита сообщений, статус подписан.
+Запасной — ntfy (если брокер недоступен), про него ниже.
 
 Два топика с секретным именем (config["remote_secret"]):
   gpo-<secret>-status — ПК публикует сюда JSON со статусом, мини-приложение его слушает;
@@ -22,6 +25,8 @@ WATCH_INTERVAL = 15.0   # пока панель открыта — не чаще
 MIN_INTERVAL = 10.0     # важные события — не чаще раза в 10 с
 COMMAND_MAX_AGE = 60    # команды старше минуты (пришли, пока ПК был выключен) игнорируем
 IMPORTANT = ("running", "alarm", "blackout", "fish_log")
+MQTT_MIN_INTERVAL = 2.0  # MQTT: статус при изменениях, но не чаще раза в 2 с
+MQTT_EVERY = 30.0        # и раз в 30 с — «я жив»
 
 
 def topics(secret):
@@ -31,7 +36,8 @@ def topics(secret):
 def webapp_link(cfg):
     """Ссылка на мини-приложение. Секрет и сервер — во фрагменте (#), он не уходит на GitHub."""
     base = str(cfg.get("webapp_url") or "").strip()
-    frag = urllib.parse.urlencode({"t": cfg["remote_secret"], "s": cfg.get("ntfy_server") or "https://ntfy.sh"})
+    frag = urllib.parse.urlencode({"t": cfg["remote_secret"], "s": cfg.get("ntfy_server") or "https://ntfy.sh",
+                                   "m": cfg.get("mqtt_url") or ""})
     if base:
         # Версия в адресе: Telegram кэширует страницу, а с новым адресом откроет свежую
         from . import __version__
@@ -54,12 +60,30 @@ class Remote:
         self._failing = False
         self.last_ok = None       # time.time() последней удачной отправки статуса
         self.last_error = None
+        self._mq_last = None
+        self._mq_time = -MQTT_EVERY
+        self._mq_force = False
+        self.mqtt = None
+        if cfg.get("mqtt_url"):
+            from .mqttlink import MqttLink
+            self.mqtt = MqttLink(cfg, self._mqtt_command, log)
         threading.Thread(target=self._publish_loop, daemon=True).start()
         threading.Thread(target=self._command_loop, daemon=True).start()
 
     def stop(self):
         self._stop.set()
         self._kick.set()
+        if self.mqtt:
+            self.mqtt.stop()
+
+    def _mqtt_command(self, cmd):
+        if cmd in ("_connected", "ping"):
+            # Подключились к брокеру или панель открыли — сразу свежий статус
+            self._mq_force = True
+            self._kick.set()
+        elif cmd in COMMANDS and self._enabled():
+            self.log(f"Мини-приложение: {cmd}")
+            self.on_command(cmd)
 
     def poke(self):
         """Статус изменился — опубликовать поскорее."""
@@ -75,6 +99,10 @@ class Remote:
         """Строка для статуса в Telegram: дошёл ли статус до панели."""
         if not self._enabled():
             return "Панель: выключена"
+        if self.mqtt and self.mqtt.connected:
+            return "Панель: на связи через MQTT-брокер"
+        if self.mqtt and self.mqtt.error:
+            return f"Панель: MQTT-брокер недоступен ({self.mqtt.error}), запасной канал ntfy"
         if self._failing and self.last_error:
             return f"Панель: статус не отправляется ({self.last_error})"
         if self.last_ok:
@@ -95,6 +123,22 @@ class Remote:
             now = time.monotonic()
             # Время работы панель досчитывает сама — его изменение не повод слать статус
             key = {k: v for k, v in status.items() if k != "runtime"}
+            mq = self.mqtt is not None and self.mqtt.connected
+            if mq:
+                since_mq = now - self._mq_time
+                if (self._mq_force or since_mq >= MQTT_EVERY
+                        or (key != self._mq_last and since_mq >= MQTT_MIN_INTERVAL)):
+                    self._mq_force = False
+                    try:
+                        if self.mqtt.publish(dict(status, ts=int(time.time()))):
+                            self._mq_last = key
+                            self._mq_time = now
+                            self.last_ok = time.time()
+                    except Exception as exc:
+                        self.last_error = f"MQTT: {exc}"
+                # Брокер на связи — ntfy (с его лимитом) только если панель сама попросила через него
+                if not self._ping:
+                    continue
             last = self._last_sent or {}
             since = now - self._last_time
             watching = now < self._watch_until

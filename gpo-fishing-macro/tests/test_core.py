@@ -338,7 +338,7 @@ def test_remote_publishes_status_and_takes_commands():
     from http.server import ThreadingHTTPServer
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S3CRET")
+    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S3CRET", mqtt_url="")
     r = remote.Remote(cfg, lambda: {"running": True, "catches": 3}, got.append, log=lambda t: None)
     r.poke()
     deadline = time.time() + 5
@@ -379,7 +379,7 @@ def test_remote_saves_ntfy_quota(monkeypatch):
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     state = {"running": True, "catches": 0}
-    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S")
+    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S", mqtt_url="")
     r = remote.Remote(cfg, lambda: dict(state), lambda c: None, log=lambda t: None)
 
     def settle(n):
@@ -697,3 +697,30 @@ def test_tidy_learned_fixes_old_entries():
     assert fishdb.display_name(fishdb.by_id(sword["id"])) == "Swordfish"
     assert fishdb.display_name(fishdb.by_id(other["id"])) == "Moon Eel"
     assert fishdb.display_name(fishdb.by_id("01")) == "Crimson Polka Puffer"
+
+
+def test_mqtt_commands_are_signed_and_not_replayable():
+    """Брокер публичный: команда без секрета, повтор перехваченной и старая — не проходят."""
+    import hashlib
+    import hmac as hm
+    from macro import mqttlink, remote
+    secret = "TopSecret123"
+    assert mqttlink.base_topic(secret).startswith("gpo/") and secret not in mqttlink.base_topic(secret)
+
+    def cmd(c, t, n, key=secret):
+        h = hm.new(key.encode(), f"{c}|{t}|{n}".encode(), hashlib.sha256).hexdigest()
+        return json.dumps({"c": c, "t": t, "n": n, "h": h}).encode()
+
+    now = time.time()
+    seen = {}
+    assert mqttlink.unpack_command(secret, cmd("stop", int(now * 1000), "a1"), seen, now) == "stop"
+    assert mqttlink.unpack_command(secret, cmd("stop", int(now * 1000), "a1"), seen, now) is None   # повтор
+    assert mqttlink.unpack_command(secret, cmd("stop", int(now * 1000), "b2", key="guess"), seen, now) is None
+    assert mqttlink.unpack_command(secret, cmd("stop", int((now - 600) * 1000), "c3"), seen, now) is None
+    assert mqttlink.unpack_command(secret, b"stop", seen, now) is None
+    packed = json.loads(mqttlink.pack_status(secret, {"running": True}))
+    assert json.loads(packed["d"]) == {"running": True}
+    assert packed["h"] == hm.new(secret.encode(), packed["d"].encode(), hashlib.sha256).hexdigest()
+    assert mqttlink.parse_url("wss://broker.emqx.io:8084/mqtt") == ("broker.emqx.io", 8084, "websockets", True, "/mqtt")
+    link = remote.webapp_link(dict(config.DEFAULTS, remote_secret="X" * 10))
+    assert "m=wss%3A%2F%2Fbroker.emqx.io" in link

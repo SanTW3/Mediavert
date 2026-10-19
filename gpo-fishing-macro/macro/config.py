@@ -100,6 +100,7 @@ DEFAULTS = {
     "remote_enabled": True,
     "remote_secret": "",
     "webapp_url": "https://santw3.github.io/gpo-macro/",
+    "mqtt_url": "wss://broker.emqx.io:8084/mqtt",   # пусто — только ntfy
 
     # Phone alarm
     "alarm_enabled": True,

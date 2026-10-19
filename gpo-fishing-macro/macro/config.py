@@ -15,6 +15,8 @@ DEFAULTS = {
     "hotkey_change_area": "f2",
     "hotkey_exit": "f3",
     "hotkey_blackout": "f4",
+    "hotkey_hud": "f5",
+    "hud_enabled": True,        # HUD поверх игры: рамка области F2 и показатели
     "always_on_top": True,
     "rod_hotkey": "7",
     "other_hotkey": "2",

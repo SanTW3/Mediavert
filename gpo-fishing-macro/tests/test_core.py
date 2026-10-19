@@ -886,3 +886,17 @@ def test_catch_list_has_clear_button_with_confirmation(monkeypatch):
         bot.stop()
     from macro import remote
     assert "reset_catches" in remote.COMMANDS                 # кнопка «Очистить» в мини-приложении
+
+
+def test_hud_layout_stays_outside_minigame_area():
+    """Рамка, шкала и панель HUD рисуются снаружи области мини-игры — распознаванию не мешают."""
+    from macro.hud import PANEL_W, layout
+    area = [400, 200, 120, 420]
+    (x, y, w, h), frame, (px, py) = layout(area, 1920, 1080)
+    fx0, fy0, fx1, fy1 = frame
+    assert x + fx0 < 400 and x + fx1 >= 520 and y + fy0 < 200 and y + fy1 >= 620   # рамка вокруг
+    assert x + px >= 520                                                       # панель справа
+    # У правого края экрана панель уходит налево от области
+    (x, y, w, h), frame, (px, py) = layout([1700, 200, 120, 420], 1920, 1080)
+    assert x + px + PANEL_W <= 1700
+    assert layout(None, 1920, 1080)[1] is None                                 # без области — только панель

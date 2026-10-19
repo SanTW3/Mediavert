@@ -164,8 +164,12 @@ class App:
                 f"Каталог рыб: исправлено или убрано записей с ошибками распознавания: {n}"))
 
         self.blackout = Blackout(self.root, self.log_threadsafe)
+        from .hud import Hud
+        self.hud = Hud(self.root, self.log_threadsafe, font=self.display)
+        self.root.after(1000, self._tick_hud)
         self._blackout_job = None
         self._status_text = "Остановлен"
+        self._status_color = "red"
         self.tg = TelegramControl(self.cfg, lambda cmd: self.events.put(("tg", cmd)), self.log_threadsafe,
                                   webapp_link=self._webapp_link)
         self.remote = Remote(self.cfg, self._remote_status, lambda cmd: self.events.put(("tg", cmd)),
@@ -364,7 +368,8 @@ class App:
         hk = self._card(page, "Горячие клавиши", "Работают везде, даже когда активно окно игры")
         self.hotkey_labels = {}
         for label, key in (("Старт / стоп", "hotkey_start_stop"), ("Выбрать область", "hotkey_change_area"),
-                           ("Выход", "hotkey_exit"), ("Экран выкл / вкл", "hotkey_blackout")):
+                           ("Выход", "hotkey_exit"), ("Экран выкл / вкл", "hotkey_blackout"),
+                           ("HUD вкл / выкл", "hotkey_hud")):
             row = self._row(hk)
             self._label(hk, row, label)
             right = tk.Frame(hk, bg=CARD)
@@ -379,6 +384,9 @@ class App:
 
         win = self._card(page, "Окно")
         self._switch(win, "Поверх всех окон", "always_on_top", command=self._apply_topmost)
+        self._switch(win, "HUD поверх игры", "hud_enabled",
+                     "Рамка области мини-игры и показатели видны всё время. Клавиша — в «Горячих клавишах»",
+                     command=lambda: self._tick_hud(once=True))
 
         bo = self._card(page, "Чёрный экран во время рыбалки",
                         "Вы видите чёрный экран, а макрос по-прежнему видит игру")
@@ -760,6 +768,38 @@ class App:
         self.events.put(("log", text))
 
     # ---------- чёрный экран ----------
+    def _hud_data(self):
+        s = self.engine.stats
+        started = s.get("started")
+        last = max(self.catch_log.items, key=lambda c: c.last, default=None)
+        return {
+            "area": self.cfg.get("area"), "area_key": self.cfg.get("hotkey_change_area"),
+            "status": self._status_text, "color": self._status_color,
+            "runtime": time.time() - started if started and self.engine.running else 0,
+            "casts": s.get("casts", 0), "catches": s.get("catches", 0),
+            "last_fish": self.catch_log.name_of(last) if last else None,
+            "live": self.engine.live if self.engine.running else None,
+        }
+
+    def _tick_hud(self, once=False):
+        """HUD видно всё время, кроме выбора области/точки (там своя рамка)."""
+        try:
+            want = bool(self.cfg.get("hud_enabled")) and not self._overlay_open()
+            if want and not self.hud.visible:
+                self.hud.show()
+            elif not want and self.hud.visible:
+                self.hud.hide()
+            if self.hud.visible:
+                if self.blackout.active:
+                    self.hud.win.lift()      # над чёрным экраном
+                self.hud.update(self._hud_data())
+        except Exception as exc:
+            self.log(f"HUD: ошибка {exc!r} — выключаю")
+            self.cfg["hud_enabled"] = False
+            self.hud.hide()
+        if not once:
+            self.root.after(150, self._tick_hud)
+
     def _blackout_on(self):
         self._blackout_job = None
         if self.blackout.show(bool(self.cfg["blackout_all_monitors"])):
@@ -1142,7 +1182,14 @@ class App:
             elif name == self.cfg["hotkey_change_area"]:
                 self.change_area()
             return
-        if name == self.cfg["hotkey_start_stop"]:
+        if name == self.cfg.get("hotkey_hud"):
+            self.cfg["hud_enabled"] = not self.cfg.get("hud_enabled")
+            if "hud_enabled" in self.vars:
+                self.vars["hud_enabled"].set(self.cfg["hud_enabled"])
+            self._save()
+            self.log("HUD включён" if self.cfg["hud_enabled"] else "HUD выключен")
+            self._tick_hud(once=True)
+        elif name == self.cfg["hotkey_start_stop"]:
             self.engine.toggle()
         elif name == self.cfg["hotkey_change_area"]:
             self.change_area()
@@ -1162,6 +1209,7 @@ class App:
                 elif kind == "status":
                     text, color = payload
                     self._status_text = text
+                    self._status_color = color
                     self.remote.poke()
                     self.status.configure(text=f"  ●  {text.upper()}  ", fg_color=STATUS_COLORS.get(color, color))
                 elif kind == "stats":

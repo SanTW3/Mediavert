@@ -83,6 +83,7 @@ class MacroEngine:
         self._mouse_sent = 0.0
         self._in_minigame = False  # в мини-игре рыбу можно на кадр потерять — не требуем её
         self.last_detection = None
+        self.live = {}            # для HUD: полоса, рыба, ЛКМ, кадров в секунду — обновляется в мини-игре
         self.stats = {"casts": 0, "catches": 0, "loops": 0, "started": None}
 
     # ---------- управление ----------
@@ -340,6 +341,12 @@ class MacroEngine:
                 det = self._grab_detect()
                 now = time.monotonic()
                 dt, prev = now - prev, now
+                fps = 0.9 * self.live.get("fps", 0) + 0.1 / max(dt, 1e-3) if self.live else 0.0
+                if det is not None:
+                    self.live = {"t": now, "fps": fps, "hold": self._mouse_held, "bar_top": det.bar_top,
+                                 "bar_h": det.bar_height, "zone_top": det.zone_top,
+                                 "zone_bottom": det.zone_bottom,
+                                 "fish": det.fish_y if det.fish_y is not None else last_fish}
                 if det is None:
                     self._set_mouse(False)
                     lost_since = lost_since or now

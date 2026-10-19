@@ -19,6 +19,8 @@ import time
 import urllib.parse
 
 DEFAULT_URL = "wss://broker.emqx.io:8084/mqtt"
+# Два брокера сразу: если сеть телефона или ПК не пускает к одному, панель работает через другой
+DEFAULT_URLS = "wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt"
 COMMAND_MAX_AGE = 60     # с, расхождение часов ПК и телефона + задержка доставки
 
 
@@ -65,13 +67,15 @@ def parse_url(url):
 class MqttLink:
     """Подключение к брокеру: публикует статус, принимает команды. Переподключается сам."""
 
-    def __init__(self, cfg, on_command, log):
+    def __init__(self, cfg, on_command, log, url=None, seen=None):
         self.cfg = cfg
         self.on_command = on_command
         self.log = log
+        self.url = url or DEFAULT_URL
+        self.host = parse_url(self.url)[0]
         self.connected = False
         self.error = None
-        self._seen = {}
+        self._seen = seen if seen is not None else {}
         self._topic = None
         self._client = None
         self._lock = threading.Lock()
@@ -80,7 +84,7 @@ class MqttLink:
         except ImportError as exc:
             self.error = f"нет paho-mqtt ({exc})"
             return
-        host, port, transport, tls, path = parse_url(cfg.get("mqtt_url"))
+        host, port, transport, tls, path = parse_url(self.url)
         c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="gpo-pc-" + os.urandom(6).hex(),
                         transport=transport)
         if transport == "websockets":
@@ -112,12 +116,12 @@ class MqttLink:
 
     def _on_disconnect(self, client, userdata, flags, reason_code=None, properties=None):
         if self.connected:
-            self.log("Мини-приложение: связь с MQTT-брокером потеряна, переподключаюсь…")
+            self.log(f"Мини-приложение: связь с {self.host} потеряна, переподключаюсь…")
         self.connected = False
 
     def _on_message(self, client, userdata, msg):
         secret = self.cfg.get("remote_secret") or ""
-        cmd = unpack_command(secret, msg.payload, self._seen)
+        cmd = unpack_command(secret, msg.payload, self._seen)   # _seen общий у всех брокеров
         if cmd:
             self.on_command(cmd)
 
@@ -151,3 +155,40 @@ class MqttLink:
                 self._client.loop_stop()
             except Exception:
                 pass
+
+
+def split_urls(value):
+    return [u for u in str(value or "").replace(",", " ").split() if u]
+
+
+class MqttGroup:
+    """Несколько брокеров сразу: статус уходит во все, команда принимается из любого (один раз)."""
+
+    def __init__(self, cfg, on_command, log):
+        seen = {}
+        self.links = [MqttLink(cfg, on_command, log, url, seen) for url in split_urls(cfg.get("mqtt_url"))]
+
+    @property
+    def connected(self):
+        return any(link.connected for link in self.links)
+
+    @property
+    def error(self):
+        errors = [f"{link.host}: {link.error}" for link in self.links if link.error]
+        return "; ".join(errors) or None
+
+    def hosts(self):
+        return [link.host for link in self.links if link.connected]
+
+    def publish(self, status):
+        ok = False
+        for link in self.links:
+            try:
+                ok = link.publish(status) or ok
+            except Exception:
+                pass
+        return ok
+
+    def stop(self):
+        for link in self.links:
+            link.stop()

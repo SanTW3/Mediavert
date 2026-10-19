@@ -65,8 +65,8 @@ class Remote:
         self._mq_force = False
         self.mqtt = None
         if cfg.get("mqtt_url"):
-            from .mqttlink import MqttLink
-            self.mqtt = MqttLink(cfg, self._mqtt_command, log)
+            from .mqttlink import MqttGroup
+            self.mqtt = MqttGroup(cfg, self._mqtt_command, log)
         threading.Thread(target=self._publish_loop, daemon=True).start()
         threading.Thread(target=self._command_loop, daemon=True).start()
 
@@ -100,7 +100,7 @@ class Remote:
         if not self._enabled():
             return "Панель: выключена"
         if self.mqtt and self.mqtt.connected:
-            return "Панель: на связи через MQTT-брокер"
+            return "Панель: на связи через " + ", ".join(self.mqtt.hosts())
         if self.mqtt and self.mqtt.error:
             return f"Панель: MQTT-брокер недоступен ({self.mqtt.error}), запасной канал ntfy"
         if self._failing and self.last_error:

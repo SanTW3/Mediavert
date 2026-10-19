@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 DEFAULTS = {
     "config_version": CONFIG_VERSION,
@@ -100,7 +100,8 @@ DEFAULTS = {
     "remote_enabled": True,
     "remote_secret": "",
     "webapp_url": "https://santw3.github.io/gpo-macro/",
-    "mqtt_url": "wss://broker.emqx.io:8084/mqtt",   # пусто — только ntfy
+    # Брокеры через пробел; пусто — только ntfy
+    "mqtt_url": "wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt",
 
     # Phone alarm
     "alarm_enabled": True,
@@ -157,6 +158,9 @@ def migrate(cfg, version):
         cfg["catch_log_enabled"] = True
         if float(cfg.get("catch_capture_delay") or 0) >= 1.0:
             cfg["catch_capture_delay"] = 0.15
+    if version < 3 and cfg.get("mqtt_url") == "wss://broker.emqx.io:8084/mqtt":
+        # v3: второй брокер на случай, если к первому не пускает сеть телефона
+        cfg["mqtt_url"] = DEFAULTS["mqtt_url"]
     cfg["config_version"] = CONFIG_VERSION
 
 

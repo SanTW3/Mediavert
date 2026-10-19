@@ -609,6 +609,10 @@ def test_migration_turns_catch_log_on(tmp_path):
     cfg["catch_log_enabled"] = False                       # после переноса выбор пользователя уважаем
     config.save(cfg, path)
     assert config.load(path)["catch_log_enabled"] is False
+    # v3: к одному брокеру из v2 добавляется второй
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"config_version": 2, "mqtt_url": "wss://broker.emqx.io:8084/mqtt"}, f)
+    assert "broker.hivemq.com" in config.load(path)["mqtt_url"]
 
 
 def test_catch_area_defaults_to_center_of_roblox(monkeypatch):

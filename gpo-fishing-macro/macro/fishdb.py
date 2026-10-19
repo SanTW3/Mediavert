@@ -1,6 +1,6 @@
 """Каталог рыб GPO: иконки, редкость (по цвету рамки) и цена продажи — и пополнение на ходу.
 
-* Встроенные 13 рыб — иконки из инвентаря игры (assets/fish).
+* Встроенные 15 рыб — иконки из инвентаря игры (assets/fish).
 * Рыба, которой нет в каталоге, добавляется сама: иконка вырезается из уведомления
   о поимке, название читается оттуда же (Windows OCR, по-английски). Такие рыбы и
   прочитанные названия хранятся в папке fish_learned рядом с программой.
@@ -44,6 +44,8 @@ BUILTIN = [
     {"id": "11", "name": "Zebra Ribbon Angelfish", "rarity": "rare", "price": 2328},
     # Со скрина без рамки: редкость узнаётся по цвету названия в первом уведомлении о поимке
     {"id": "12", "name": "Anglerfish", "rarity": None, "price": 0},
+    {"id": "13", "name": "Golden Ribbon Angelfish", "rarity": None, "price": 0},
+    {"id": "14", "name": "Swordfish", "rarity": None, "price": 0},
 ]
 FISH = BUILTIN  # совместимость
 RARITY_ORDER = {"legendary": 0, "epic": 1, "rare": 2, "common": 3, None: 4}
@@ -251,7 +253,9 @@ def match_name(raw, cfg=None):
        «Cg0tden Doua Putter» → Golden Polka Puffer. Берём, только если подходит ровно одна рыба:
        «Crimson» или «Shark» есть в двух названиях — такое не угадываем.
     """
-    names = list(dict.fromkeys(KNOWN_NAMES + [display_name(f, cfg) for f in BUILTIN]))
+    # Список игры + свои названия из настроек (не выученные: среди них мог оказаться мусор)
+    own = [v for v in ((cfg or {}).get("fish_names") or {}).values() if str(v or "").strip()]
+    names = list(dict.fromkeys(KNOWN_NAMES + [f["name"] for f in BUILTIN] + own))
     tokens = [t for t in re.split(r"[\s>»›)\]}]+", str(raw or "")) if t][:6]
     if not tokens:
         return None
@@ -314,6 +318,10 @@ def find_by_name(name, cfg=None):
     for fid, n in names.items():
         if name_key(n) == key:
             return by_id(fid)
+    # Рыбу со скрина переименовали в каталоге, а игра пишет её настоящее название
+    for f in all_fish():
+        if not f["id"].startswith("u") and name_key(f["name"]) == key:
+            return f
     # Без погрешности: название уже подобрано по списку (match_name), а Golden и Zebra Ribbon Angelfish
     # различаются всего несколькими буквами
     return None
@@ -335,7 +343,10 @@ def tidy_learned(cfg=None):
         names = _load()["names"]
         for fid, n in list(names.items()):
             right = match_name(n, cfg)
-            if right and right != n:
+            if not right:
+                names.pop(fid)              # пустое или мусорное название поверх встроенного
+                _save()
+            elif right != n:
                 names[fid] = right
                 _save()
     for f in list(_load()["fish"]):

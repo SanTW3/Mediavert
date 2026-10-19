@@ -696,9 +696,9 @@ def test_tidy_learned_fixes_old_entries():
     sword = fishdb.add_fish(fishdb.placeholder_icon("epic"), "Swordflsh", rarity="epic")
     other = fishdb.add_fish(Img.new("RGBA", (8, 8)), "Moon Eel", rarity="rare")
     moves = dict(fishdb.tidy_learned())
-    assert moves == {junk["id"]: None, typo["id"]: "01", other["id"]: None}   # «Moon Eel» нет в игре
+    assert moves == {junk["id"]: None, typo["id"]: "01", sword["id"]: "14", other["id"]: None}  # Moon Eel нет в игре
     assert fishdb.by_id(junk["id"]) is None and fishdb.by_id(typo["id"]) is None
-    assert fishdb.display_name(fishdb.by_id(sword["id"])) == "Swordfish"
+    assert fishdb.by_id(sword["id"]) is None and fishdb.display_name(fishdb.by_id("14")) == "Swordfish"
     assert fishdb.by_id(other["id"]) is None
     assert fishdb.display_name(fishdb.by_id("01")) == "Crimson Polka Puffer"
 
@@ -783,3 +783,29 @@ def test_anglerfish_icon_and_rarity_from_notice():
     assert c.fish_id == "12" and not c.new and c.rarity == "epic"
     fishdb.set_store_dir(fishdb.store_dir())                   # запомнилась после перезапуска
     assert fishdb.by_id("12")["rarity"] == "epic"
+
+
+def test_new_builtin_icons_and_learned_merge():
+    from macro import fishdb
+    from macro.catches import CatchLog
+    assert fishdb.by_id("13")["name"] == "Golden Ribbon Angelfish" and fishdb.by_id("14")["name"] == "Swordfish"
+    assert fishdb.icon("13").size == fishdb.icon("14").size == (71, 71)
+    # Старая выученная запись Swordfish (силуэт) переходит на иконку, мусорное имя у встроенной — убирается
+    u = fishdb.add_fish(fishdb.placeholder_icon("rare"), "Swordfish", rarity="rare")
+    fishdb.learn_name("02", "Shstk")
+    moves = dict(fishdb.tidy_learned())
+    assert moves[u["id"]] == "14" and fishdb.display_name(fishdb.by_id("02")) == "Blue-Lip Grouper"
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    c = log.add(np.zeros((40, 200, 3), np.uint8), text="New Item <Zsvordfis>")
+    assert c.fish_id == "14" and not c.new
+    cfg = dict(config.DEFAULTS, fish_names={"02": " ", "04": "My Legend"})
+    config.migrate(cfg, config.CONFIG_VERSION)
+    assert cfg["fish_names"] == {"04": "My Legend"}
+
+
+def test_renamed_builtin_still_found_by_game_name():
+    from macro import fishdb
+    from macro.catches import CatchLog
+    log = CatchLog(dict(config.DEFAULTS, fish_names={"04": "Моя легенда"}), log=lambda t: None)
+    c = log.add(np.zeros((40, 200, 3), np.uint8), text="New Item <Golden Polka Puffer>")
+    assert c.fish_id == "04" and log.name_of(c) == "Моя легенда" and not c.new

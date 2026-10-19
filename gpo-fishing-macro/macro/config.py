@@ -164,6 +164,8 @@ def migrate(cfg, version):
         # v3: второй брокер на случай, если к первому не пускает сеть телефона;
         # v4: ещё два на порту 443 — нестандартные порты часто закрыты
         cfg["mqtt_url"] = DEFAULTS["mqtt_url"]
+    # Пустые «свои названия» скрывали название рыбы в каталоге
+    cfg["fish_names"] = {k: v for k, v in dict(cfg.get("fish_names") or {}).items() if str(v or "").strip()}
     cfg["config_version"] = CONFIG_VERSION
 
 

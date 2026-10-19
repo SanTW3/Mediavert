@@ -770,3 +770,16 @@ def test_item_line_split_by_ocr_and_unknown_fish():
     assert log.add(black, text="New Item <Serk>") is u and u.count == 2
     assert len([f for f in fishdb.all_fish() if f["name"] == fishdb.UNKNOWN_NAME]) == 1
     assert log.add(black, text="SAFE ZONE PROTECTED") is None
+
+
+def test_anglerfish_icon_and_rarity_from_notice():
+    from macro import fishdb
+    from macro.catches import CatchLog
+    f = fishdb.by_id("12")
+    assert f["name"] == "Anglerfish" and f["rarity"] is None and fishdb.icon("12").size == (71, 71)
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    rgb, lines = _notice("Anglerfish", color=(190, 110, 255))   # фиолетовое название — эпическая
+    c = log.add(rgb, lines=lines)
+    assert c.fish_id == "12" and not c.new and c.rarity == "epic"
+    fishdb.set_store_dir(fishdb.store_dir())                   # запомнилась после перезапуска
+    assert fishdb.by_id("12")["rarity"] == "epic"

@@ -1,6 +1,6 @@
 """Каталог рыб GPO: иконки, редкость (по цвету рамки) и цена продажи — и пополнение на ходу.
 
-* Встроенные 12 рыб — иконки из инвентаря игры (assets/fish).
+* Встроенные 13 рыб — иконки из инвентаря игры (assets/fish).
 * Рыба, которой нет в каталоге, добавляется сама: иконка вырезается из уведомления
   о поимке, название читается оттуда же (Windows OCR, по-английски). Такие рыбы и
   прочитанные названия хранятся в папке fish_learned рядом с программой.
@@ -27,8 +27,8 @@ RARITIES = {
 }
 NEW_RARITY = {"title": "Новая", "color": "#ffd65a"}
 
-# Встроенные рыбы. Названий в инвентаре игры нет — это запасные имена по виду,
-# пока игра не покажет настоящее в уведомлении о поимке. price — цена продажи одной рыбы (Peli)
+# Встроенные рыбы: иконки и названия по скринам инвентаря. rarity None — рамки на скрине не было,
+# редкость запомнится по цвету названия в уведомлении. price — цена продажи одной рыбы (Peli)
 BUILTIN = [
     {"id": "00", "name": "Crimson Snapper", "rarity": "rare", "price": 1004},
     {"id": "01", "name": "Crimson Polka Puffer", "rarity": "rare", "price": 1057},
@@ -42,6 +42,8 @@ BUILTIN = [
     {"id": "09", "name": "Candy Corn Squid", "rarity": "rare", "price": 12318},
     {"id": "10", "name": "Exotic Tigerfin", "rarity": "rare", "price": 2000},
     {"id": "11", "name": "Zebra Ribbon Angelfish", "rarity": "rare", "price": 2328},
+    # Со скрина без рамки: редкость узнаётся по цвету названия в первом уведомлении о поимке
+    {"id": "12", "name": "Anglerfish", "rarity": None, "price": 0},
 ]
 FISH = BUILTIN  # совместимость
 RARITY_ORDER = {"legendary": 0, "epic": 1, "rare": 2, "common": 3, None: 4}
@@ -90,7 +92,8 @@ def _load():
                 data = json.load(f)
         except (OSError, ValueError):
             data = {}
-        _learned = {"names": dict(data.get("names") or {}), "fish": list(data.get("fish") or [])}
+        _learned = {"names": dict(data.get("names") or {}), "fish": list(data.get("fish") or []),
+                    "rarities": dict(data.get("rarities") or {})}
     return _learned
 
 
@@ -105,7 +108,10 @@ def _save():
 # ---------- каталог ----------
 def all_fish():
     with _lock:
-        return BUILTIN + list(_load()["fish"])
+        data = _load()
+        known = data.get("rarities") or {}
+        builtin = [dict(f, rarity=known.get(f["id"])) if f["rarity"] is None else f for f in BUILTIN]
+        return builtin + list(data["fish"])
 
 
 def by_id(fish_id):
@@ -160,6 +166,10 @@ def learn_name(fish_id, name):
 
 def set_rarity(fish_id, rarity):
     with _lock:
+        if any(f["id"] == fish_id and f["rarity"] is None for f in BUILTIN):
+            _load().setdefault("rarities", {})[fish_id] = rarity
+            _save()
+            return
         for f in _load()["fish"]:
             if f["id"] == fish_id:
                 f["rarity"] = rarity

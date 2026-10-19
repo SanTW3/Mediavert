@@ -357,7 +357,7 @@ class CatchLog:
             # вместо иконки — силуэт цвета редкости (иконку можно привязать в каталоге)
             fish = fishdb.add_fish(fishdb.placeholder_icon(rarity), name, rarity=rarity)
             new = True
-        elif fish["id"].startswith("u") and not fish.get("rarity") and rarity:
+        elif not fish.get("rarity") and rarity and fish["name"] != fishdb.UNKNOWN_NAME:
             fishdb.set_rarity(fish["id"], rarity)
         with self._lock:
             match = next((c for c in self.items if c.fish_id == fish["id"]), None)

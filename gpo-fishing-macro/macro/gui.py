@@ -9,7 +9,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from . import alarm, config, fishdb, screen
+from . import alarm, config, fishdb, screen, winput
 from .blackout import Blackout
 from .catches import CatchLog
 from .engine import MacroEngine
@@ -782,10 +782,12 @@ class App:
         }
 
     def _tick_hud(self, once=False):
-        """HUD виден, пока идёт ловля, кроме выбора области/точки (там своя рамка) и чёрного экрана."""
+        """HUD виден, пока идёт ловля и активно окно Roblox: поверх других окон он не нужен.
+        Прячется и на время выбора области/точки (там своя рамка), и при чёрном экране."""
         try:
-            want = (bool(self.cfg.get("hud_enabled")) and self.engine.running and not self._overlay_open()
-                    and not self.blackout.active)
+            in_roblox = not winput.IS_WINDOWS or winput.foreground_title() == "Roblox"
+            want = (bool(self.cfg.get("hud_enabled")) and self.engine.running and in_roblox
+                    and not self._overlay_open() and not self.blackout.active)
             if want and not self.hud.visible:
                 self.hud.show()
             elif not want and self.hud.visible:

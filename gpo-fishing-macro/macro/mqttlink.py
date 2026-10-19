@@ -19,8 +19,10 @@ import time
 import urllib.parse
 
 DEFAULT_URL = "wss://broker.emqx.io:8084/mqtt"
-# Два брокера сразу: если сеть телефона или ПК не пускает к одному, панель работает через другой
-DEFAULT_URLS = "wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt"
+# Несколько брокеров сразу: если сеть телефона или ПК не пускает к одному, панель работает через другой.
+# Последние два — на обычном порту 443: мобильные сети и VPN часто режут нестандартные порты (8084, 8884)
+DEFAULT_URLS = ("wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt "
+                "wss://mqtt.eclipseprojects.io:443/mqtt wss://public:public@public.cloud.shiftr.io:443/")
 COMMAND_MAX_AGE = 60     # с, расхождение часов ПК и телефона + задержка доставки
 
 
@@ -56,12 +58,17 @@ def unpack_command(secret, payload, seen, now=None):
 
 
 def parse_url(url):
-    """wss://host:port/path → (host, port, transport, tls, path)."""
+    """wss://host:port/path → (host, port, transport, tls, path). Логин — см. url_auth."""
     u = urllib.parse.urlparse(url or DEFAULT_URL)
     tls = u.scheme in ("wss", "mqtts", "ssl")
     transport = "websockets" if u.scheme in ("ws", "wss") else "tcp"
     default_port = {"wss": 443, "ws": 80, "mqtts": 8883, "ssl": 8883}.get(u.scheme, 1883)
     return u.hostname, u.port or default_port, transport, tls, u.path or "/mqtt"
+
+
+def url_auth(url):
+    u = urllib.parse.urlparse(url or DEFAULT_URL)
+    return (urllib.parse.unquote(u.username), urllib.parse.unquote(u.password or "")) if u.username else None
 
 
 class MqttLink:
@@ -91,6 +98,9 @@ class MqttLink:
             c.ws_set_options(path=path)
         if tls:
             c.tls_set_context(ssl.create_default_context())
+        auth = url_auth(self.url)
+        if auth:
+            c.username_pw_set(*auth)
         c.reconnect_delay_set(2, 60)
         c.on_connect = self._on_connect
         c.on_disconnect = self._on_disconnect

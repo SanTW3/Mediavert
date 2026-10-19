@@ -613,6 +613,7 @@ def test_migration_turns_catch_log_on(tmp_path):
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"config_version": 2, "mqtt_url": "wss://broker.emqx.io:8084/mqtt"}, f)
     assert "broker.hivemq.com" in config.load(path)["mqtt_url"]
+    assert "shiftr.io:443" in config.load(path)["mqtt_url"]
 
 
 def test_catch_area_defaults_to_center_of_roblox(monkeypatch):
@@ -726,5 +727,9 @@ def test_mqtt_commands_are_signed_and_not_replayable():
     assert json.loads(packed["d"]) == {"running": True}
     assert packed["h"] == hm.new(secret.encode(), packed["d"].encode(), hashlib.sha256).hexdigest()
     assert mqttlink.parse_url("wss://broker.emqx.io:8084/mqtt") == ("broker.emqx.io", 8084, "websockets", True, "/mqtt")
+    shiftr = "wss://public:public@public.cloud.shiftr.io:443/"
+    assert mqttlink.parse_url(shiftr) == ("public.cloud.shiftr.io", 443, "websockets", True, "/")
+    assert mqttlink.url_auth(shiftr) == ("public", "public") and mqttlink.url_auth("wss://a.b/mqtt") is None
+    assert len(mqttlink.split_urls(config.DEFAULTS["mqtt_url"])) == 4
     link = remote.webapp_link(dict(config.DEFAULTS, remote_secret="X" * 10))
     assert "m=wss%3A%2F%2Fbroker.emqx.io" in link

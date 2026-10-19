@@ -1,6 +1,6 @@
 """Каталог рыб GPO: иконки, редкость (по цвету рамки) и цена продажи — и пополнение на ходу.
 
-* Встроенные 15 рыб — иконки из инвентаря игры (assets/fish).
+* Встроенные 16 рыб — иконки из инвентаря игры (assets/fish).
 * Рыба, которой нет в каталоге, добавляется сама: иконка вырезается из уведомления
   о поимке, название читается оттуда же (Windows OCR, по-английски). Такие рыбы и
   прочитанные названия хранятся в папке fish_learned рядом с программой.
@@ -46,6 +46,7 @@ BUILTIN = [
     {"id": "12", "name": "Anglerfish", "rarity": None, "price": 0},
     {"id": "13", "name": "Golden Ribbon Angelfish", "rarity": None, "price": 0},
     {"id": "14", "name": "Swordfish", "rarity": None, "price": 0},
+    {"id": "15", "name": "Fangfish", "rarity": None, "price": 0},
 ]
 FISH = BUILTIN  # совместимость
 RARITY_ORDER = {"legendary": 0, "epic": 1, "rare": 2, "common": 3, None: 4}

@@ -529,26 +529,28 @@ def test_rarity_from_text_color():
     assert text_rarity(shot, (32, 10, 95, 24)) == "common"
 
 
-def test_new_fish_added_and_linked_to_icon():
+def test_new_fish_added_and_linked_to_icon(monkeypatch):
+    """Рыба из списка игры без иконки (например, добавленная в игру позже) попадает в каталог с силуэтом."""
     from macro import fishdb
+    monkeypatch.setattr(fishdb, "KNOWN_NAMES", fishdb.KNOWN_NAMES + ["Moon Eel"])
     from macro.catches import CatchLog
     log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
-    rgb, lines = _notice("Fangfish")
+    rgb, lines = _notice("Moon Eel")
     c = log.add(rgb, lines=lines)
-    assert c.new and c.fish_id.startswith("u") and log.name_of(c) == "Fangfish" and c.rarity == "rare"
+    assert c.new and c.fish_id.startswith("u") and log.name_of(c) == "Moon Eel" and c.rarity == "rare"
     assert c.icon.size == (72, 72)                                     # силуэт цвета редкости
     assert log.add(rgb, lines=lines) is c and c.count == 2 and not c.new
     # Каталог переживает перезапуск
     fishdb.set_store_dir(fishdb.store_dir())
-    assert fishdb.by_id(c.fish_id)["name"] == "Fangfish"
+    assert fishdb.by_id(c.fish_id)["name"] == "Moon Eel"
     # Пользователь говорит: это рыба со скрина №00 — название переходит к её иконке
     uid = c.fish_id
     fishdb.link_to_builtin(uid, "00")
     log.remap(uid, "00")
-    assert fishdb.by_id(uid) is None and log.name_of(c) == "Fangfish" and c.fish_id == "00"
+    assert fishdb.by_id(uid) is None and log.name_of(c) == "Moon Eel" and c.fish_id == "00"
     c2 = log.add(rgb, lines=lines)
-    assert c2 is c and c.count == 3 and fishdb.find_by_name("Fangfish")["id"] == "00"
-    assert "🔵 Fangfish × 3" in log.summary_text()
+    assert c2 is c and c.count == 3 and fishdb.find_by_name("Moon Eel")["id"] == "00"
+    assert "🔵 Moon Eel × 3" in log.summary_text()
 
 
 def test_skip_first_bait_purchase(monkeypatch):
@@ -804,7 +806,6 @@ def test_new_builtin_icons_and_learned_merge():
 
 
 def test_renamed_builtin_still_found_by_game_name():
-    from macro import fishdb
     from macro.catches import CatchLog
     log = CatchLog(dict(config.DEFAULTS, fish_names={"04": "Моя легенда"}), log=lambda t: None)
     c = log.add(np.zeros((40, 200, 3), np.uint8), text="New Item <Golden Polka Puffer>")

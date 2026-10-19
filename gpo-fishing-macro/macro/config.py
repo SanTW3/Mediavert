@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-CONFIG_VERSION = 4
+CONFIG_VERSION = 5
 
 DEFAULTS = {
     "config_version": CONFIG_VERSION,
@@ -68,7 +68,8 @@ DEFAULTS = {
     "fruit_shift_delay": 0.5,
     "fruit_backspace_delay": 1.5,
     "bait_click_delay": 0.5,
-    "black_threshold": 0.5,
+    "black_threshold": 0.85,    # доля окна Roblox, которая должна быть чёрной (0 — проверка выключена)
+    "black_level": 10,          # «чёрный» пиксель: все каналы не ярче этого
     "black_spam_delay": 0.25,
     "black_spam_key": "space",
     "black_max_sec": 30.0,
@@ -166,6 +167,9 @@ def migrate(cfg, version):
         # v3: второй брокер на случай, если к первому не пускает сеть телефона;
         # v4: ещё два на порту 443 — нестандартные порты часто закрыты
         cfg["mqtt_url"] = DEFAULTS["mqtt_url"]
+    if version < 5 and float(cfg.get("black_threshold") or 0) == 0.5:
+        # v5: 50% тёмного экрана бывает и ночью в игре — макрос прыгал без чёрного экрана
+        cfg["black_threshold"] = DEFAULTS["black_threshold"]
     # Пустые «свои названия» скрывали название рыбы в каталоге
     cfg["fish_names"] = {k: v for k, v in dict(cfg.get("fish_names") or {}).items() if str(v or "").strip()}
     cfg["config_version"] = CONFIG_VERSION

@@ -900,3 +900,30 @@ def test_hud_layout_stays_outside_minigame_area():
     (x, y, w, h), frame, (px, py) = layout([1700, 200, 120, 420], 1920, 1080)
     assert x + px + PANEL_W <= 1700
     assert layout(None, 1920, 1080)[1] is None                                 # без области — только панель
+
+
+def test_black_screen_checks_roblox_window_and_rechecks(monkeypatch):
+    """Тёмный рабочий стол на другом мониторе или один тёмный кадр — не повод прыгать."""
+    from macro import engine as eng
+    e = eng.MacroEngine(dict(config.DEFAULTS), log=lambda t: None)
+    keys = []
+    monkeypatch.setattr(eng.winput, "press_key", lambda k: keys.append(k))
+    monkeypatch.setattr(eng.winput, "roblox_rect", lambda: (0, 0, 800, 600))
+    monkeypatch.setattr(e, "_sleep", lambda s: None)
+    monkeypatch.setattr(e, "_delay", lambda k: None)
+    night = np.full((600, 800, 3), 14, np.uint8)            # тёмная ночь в игре, но не чёрный экран
+    monkeypatch.setattr(eng.screen, "grab", lambda r: night)
+    monkeypatch.setattr(eng.screen, "grab_monitor", lambda: np.zeros((10, 10, 3), np.uint8))  # чёрный 2-й монитор
+    e._check_black_screen()
+    assert keys == []
+    frames = iter([np.zeros((600, 800, 3), np.uint8), night])  # один чёрный кадр, потом нормально
+    monkeypatch.setattr(eng.screen, "grab", lambda r: next(frames))
+    e._check_black_screen()
+    assert keys == []
+    shots = iter([np.zeros((600, 800, 3), np.uint8)] * 3 + [night])   # настоящий чёрный экран
+    monkeypatch.setattr(eng.screen, "grab", lambda r: next(shots))
+    e._check_black_screen()
+    assert keys == ["space"]
+    cfg = dict(config.DEFAULTS, black_threshold=0.5)
+    config.migrate(cfg, 4)
+    assert cfg["black_threshold"] == 0.85

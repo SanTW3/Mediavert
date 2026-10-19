@@ -195,17 +195,42 @@ class MacroEngine:
         self._delay("post_focus_delay")
         return True
 
+    def _black_level(self):
+        """Доля почти чёрных пикселей в окне Roblox. Раньше смотрели на весь основной монитор:
+        если игра на другом мониторе или вокруг окна тёмный рабочий стол, макрос «видел» чёрный
+        экран и прыгал пробелом на ровном месте."""
+        rect = winput.roblox_rect()
+        rgb = None
+        if rect and rect[2] > 100 and rect[3] > 100 and rect[0] > -10000:
+            try:
+                rgb = screen.grab(rect)[::8, ::8]
+            except Exception:
+                rgb = None
+        if rgb is None:
+            rgb = screen.grab_monitor()
+        return black_fraction(rgb, int(self.cfg.get("black_level", 10)))
+
     def _check_black_screen(self):
         """Anti-Macro Black Screen: спамим клавишей, пока экран не посветлеет; не вышло — тревога."""
         cfg = self.cfg
         threshold = float(cfg["black_threshold"])
-        if threshold <= 0 or black_fraction(screen.grab_monitor()) < threshold:
+        if threshold <= 0:
             return
-        self.log("Чёрный экран античита — спамлю клавишей " + str(cfg["black_spam_key"]))
+        level = self._black_level()
+        if level < threshold:
+            return
+        # Перепроверка через полсекунды: тёмный кадр (загрузка, вспышка) — ещё не античит
+        self._sleep(0.5)
+        level = self._black_level()
+        if level < threshold:
+            return
+        self.log(f"Чёрный экран античита ({level:.0%} окна Roblox чёрное) — спамлю клавишей "
+                 f"{cfg['black_spam_key']}. Если экран на самом деле не чёрный, поднимите «Порог чёрного "
+                 "экрана» или поставьте 0, чтобы выключить проверку")
         self.on_status("Убираем чёрный экран", "orange")
         self._set_mouse(False)
         deadline = time.monotonic() + float(cfg["black_max_sec"])
-        while black_fraction(screen.grab_monitor()) >= threshold:
+        while self._black_level() >= threshold:
             if time.monotonic() > deadline:
                 self._raise_alarm(f"Чёрный экран не уходит {cfg['black_max_sec']:g} с — нужна ваша помощь")
                 return

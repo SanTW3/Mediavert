@@ -578,3 +578,9 @@ def test_windows_ocr_reads_game_notification():
     assert c is not None, log.last_texts
     assert log.name_of(c).lower().replace(" ", "") == "crimsonpolkapuffer"
     assert c.rarity == "rare"
+
+
+def test_parse_name_drops_stray_letters():
+    from macro.catches import parse_name
+    assert parse_name("New Item <Crimson Polka x Puffer>") == "Crimson Polka Puffer"
+    assert parse_name("Nev ltem <Fangfish>") == "Fangfish"

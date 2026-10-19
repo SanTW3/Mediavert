@@ -54,7 +54,9 @@ def parse_name(text):
     for line in (text or "").splitlines():
         m = BRACKETED.search(line) or NEW_ITEM.search(line)
         if m:
-            name = re.sub(r"\s+", " ", m.group(1)).strip(" -'")
+            # Одиночные буквы — мусор от столбов и бликов рядом с текстом («Crimson Polka x Puffer»)
+            words = [w for w in m.group(1).split() if len(w) > 1]
+            name = " ".join(words).strip(" -'")
             if len(name) >= 2:
                 return name
     return None

@@ -33,14 +33,14 @@ BUILTIN = [
     {"id": "00", "name": "Crimson Snapper", "rarity": "rare", "price": 1004},
     {"id": "01", "name": "Crimson Polka Puffer", "rarity": "rare", "price": 1057},
     {"id": "02", "name": "Blue-Lip Grouper", "rarity": "common", "price": 162},
-    {"id": "03", "name": "Exotic Tigerfin", "rarity": "common", "price": 38},
+    {"id": "03", "name": "Tigerfin", "rarity": "common", "price": 38},
     {"id": "04", "name": "Golden Polka Puffer", "rarity": "legendary", "price": 11941},
     {"id": "05", "name": "Golden Tigerfin", "rarity": "legendary", "price": 12840},
     {"id": "06", "name": "Jack-O'-Bite", "rarity": "legendary", "price": 10583},
     {"id": "07", "name": "Skeletal Shark", "rarity": "epic", "price": 14913},
-    {"id": "08", "name": "Dark Skeletal Shark", "rarity": "rare", "price": 2703},
+    {"id": "08", "name": "Dark Skeletal Shark", "rarity": "legendary", "price": 2703},
     {"id": "09", "name": "Candy Corn Squid", "rarity": "rare", "price": 12318},
-    {"id": "10", "name": "Tigerfin", "rarity": "rare", "price": 2000},
+    {"id": "10", "name": "Exotic Tigerfin", "rarity": "rare", "price": 2000},
     {"id": "11", "name": "Zebra Ribbon Angelfish", "rarity": "rare", "price": 2328},
 ]
 FISH = BUILTIN  # совместимость

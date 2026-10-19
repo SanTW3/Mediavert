@@ -541,13 +541,13 @@ def test_new_fish_added_and_linked_to_icon():
     # Каталог переживает перезапуск
     fishdb.set_store_dir(fishdb.store_dir())
     assert fishdb.by_id(c.fish_id)["name"] == "Fangfish"
-    # Пользователь говорит: это рыба со скрина №08 — название переходит к её иконке
+    # Пользователь говорит: это рыба со скрина №00 — название переходит к её иконке
     uid = c.fish_id
-    fishdb.link_to_builtin(uid, "08")
-    log.remap(uid, "08")
-    assert fishdb.by_id(uid) is None and log.name_of(c) == "Fangfish" and c.fish_id == "08"
+    fishdb.link_to_builtin(uid, "00")
+    log.remap(uid, "00")
+    assert fishdb.by_id(uid) is None and log.name_of(c) == "Fangfish" and c.fish_id == "00"
     c2 = log.add(rgb, lines=lines)
-    assert c2 is c and c.count == 3 and fishdb.find_by_name("Fangfish")["id"] == "08"
+    assert c2 is c and c.count == 3 and fishdb.find_by_name("Fangfish")["id"] == "00"
     assert "🔵 Fangfish × 3" in log.summary_text()
 
 

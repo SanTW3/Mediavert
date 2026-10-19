@@ -385,7 +385,7 @@ class App:
         win = self._card(page, "Окно")
         self._switch(win, "Поверх всех окон", "always_on_top", command=self._apply_topmost)
         self._switch(win, "HUD поверх игры", "hud_enabled",
-                     "Рамка области мини-игры и показатели видны всё время. Клавиша — в «Горячих клавишах»",
+                     "Рамка области мини-игры и показатели, пока идёт ловля. Клавиша — в «Горячих клавишах»",
                      command=lambda: self._tick_hud(once=True))
 
         bo = self._card(page, "Чёрный экран во время рыбалки",
@@ -782,9 +782,9 @@ class App:
         }
 
     def _tick_hud(self, once=False):
-        """HUD видно всё время, кроме выбора области/точки (там своя рамка) и чёрного экрана."""
+        """HUD виден, пока идёт ловля, кроме выбора области/точки (там своя рамка) и чёрного экрана."""
         try:
-            want = (bool(self.cfg.get("hud_enabled")) and not self._overlay_open()
+            want = (bool(self.cfg.get("hud_enabled")) and self.engine.running and not self._overlay_open()
                     and not self.blackout.active)
             if want and not self.hud.visible:
                 self.hud.show()

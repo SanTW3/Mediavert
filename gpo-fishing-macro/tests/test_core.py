@@ -539,3 +539,22 @@ def test_windows_ocr_reads_text():
     text = ocr.read_text(np.asarray(img), raise_errors=True)
     print("OCR:", repr(text))
     assert clean_name(text) == "Golden Carp"
+
+
+def test_migration_turns_catch_log_on(tmp_path):
+    path = str(tmp_path / "config.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"catch_log_enabled": False, "catch_capture_delay": 1.0, "kp": 1.2}, f)
+    cfg = config.load(path)
+    assert cfg["catch_log_enabled"] is True and cfg["catch_capture_delay"] == 0.15
+    assert cfg["kp"] == 1.2 and cfg["config_version"] == config.CONFIG_VERSION
+    cfg["catch_log_enabled"] = False                       # после переноса выбор пользователя уважаем
+    config.save(cfg, path)
+    assert config.load(path)["catch_log_enabled"] is False
+
+
+def test_catch_area_defaults_to_center_of_roblox(monkeypatch):
+    from macro import engine as eng
+    monkeypatch.setattr(eng.winput, "roblox_rect", lambda: (100, 50, 1000, 600))
+    assert eng.catch_area(dict(config.DEFAULTS)) == [320, 182, 560, 216]
+    assert eng.catch_area(dict(config.DEFAULTS, catch_area=[1, 2, 3, 4])) == [1, 2, 3, 4]

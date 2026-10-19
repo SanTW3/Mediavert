@@ -4,7 +4,12 @@ import json
 import os
 import sys
 
+CONFIG_VERSION = 2
+
 DEFAULTS = {
+    "config_version": CONFIG_VERSION,
+    "guide_shown": False,       # гайд при первом запуске
+
     # General
     "hotkey_start_stop": "f1",
     "hotkey_change_area": "f2",
@@ -78,9 +83,10 @@ DEFAULTS = {
     "require_progress": True,
 
     # Журнал улова: снимок уведомления о рыбе после мини-игры + Windows OCR
-    "catch_log_enabled": False,
-    "catch_area": None,
-    "catch_capture_delay": 1.0,
+    "catch_log_enabled": True,
+    "catch_area": None,         # None — центральная часть окна Roblox, где появляется «New Item <…>»
+    "catch_capture_delay": 0.15,
+    "catch_window": 2.0,        # сколько секунд после мини-игры снимать уведомление
     "catch_notify_each": False,
     "fish_names": {},          # свои названия рыб из каталога: {"04": "…"}
 
@@ -127,9 +133,11 @@ CONFIG_PATH = os.path.join(app_dir(), "config.json")
 
 def load(path=CONFIG_PATH):
     cfg = copy.deepcopy(DEFAULTS)
+    version = CONFIG_VERSION   # нет файла — настройки новые, переносить нечего
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        version = int(data.get("config_version") or 1)
         for key, value in data.items():
             if key in cfg:
                 cfg[key] = value
@@ -137,7 +145,18 @@ def load(path=CONFIG_PATH):
         pass
     if not cfg["remote_secret"]:
         cfg["remote_secret"] = new_secret()
+    migrate(cfg, version)
     return cfg
+
+
+def migrate(cfg, version):
+    """Перенос старых настроек (версии version) на новые значения по умолчанию."""
+    if version < 2:
+        # v2: журнал улова включён сразу и снимает уведомление с первых мгновений
+        cfg["catch_log_enabled"] = True
+        if float(cfg.get("catch_capture_delay") or 0) >= 1.0:
+            cfg["catch_capture_delay"] = 0.15
+    cfg["config_version"] = CONFIG_VERSION
 
 
 def new_secret():

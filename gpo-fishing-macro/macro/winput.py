@@ -155,6 +155,19 @@ def foreground_title():
     return buf.value
 
 
+def roblox_rect():
+    """(x, y, w, h) окна Roblox на экране или None."""
+    if not IS_WINDOWS:
+        return None
+    hwnd = user32.FindWindowW(None, "Roblox")
+    if not hwnd:
+        return None
+    rect = wintypes.RECT()
+    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return None
+    return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+
+
 def roblox_window_exists():
     if not IS_WINDOWS:
         return True

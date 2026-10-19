@@ -8,8 +8,21 @@ from .detector import black_fraction, detect
 from .watchdog import Watchdog
 
 
-CATCH_FRAMES = 4         # снимков уведомления о рыбе
-CATCH_FRAME_GAP = 0.35   # с
+CATCH_FRAME_GAP = 0.25   # с между снимками уведомления о рыбе
+CATCH_MAX_FRAMES = 12
+
+
+def catch_area(cfg):
+    """Область уведомления о рыбе: выбранная пользователем или центральная часть окна Roblox
+    (там, над персонажем, игра пишет «New Item <рыба>»)."""
+    if cfg.get("catch_area"):
+        return cfg["catch_area"]
+    rect = winput.roblox_rect()
+    if rect is None:
+        mon = screen.primary_monitor()
+        rect = (mon["left"], mon["top"], mon["width"], mon["height"])
+    x, y, w, h = rect
+    return [int(x + w * 0.22), int(y + h * 0.22), int(w * 0.56), int(h * 0.36)]
 
 
 class _Stopped(Exception):
@@ -349,24 +362,24 @@ class MacroEngine:
         """Пауза Fish End Delay; посреди неё — снимок уведомления о пойманной рыбе."""
         cfg = self.cfg
         end_delay = float(cfg["fish_end_delay"])
-        area = cfg.get("catch_area")
-        if not (cfg.get("catch_log_enabled") and area and self.on_catch):
+        if not (cfg.get("catch_log_enabled") and self.on_catch):
             self._sleep(end_delay)
             return
-        # Уведомление «New Item <рыба>» появляется не сразу и гаснет — несколько снимков подряд,
-        # распознавание потом возьмёт первый, где оно есть
-        capture = max(float(cfg["catch_capture_delay"]), 0.0)
-        self._sleep(capture)
-        frames, spent = [], capture
-        for i in range(CATCH_FRAMES):
+        area = catch_area(cfg)
+        # Уведомление «New Item <рыба>» появляется сразу после поимки и быстро гаснет —
+        # снимаем его всё окно catch_window, распознавание возьмёт первый снимок, где оно есть
+        start = max(float(cfg["catch_capture_delay"]), 0.0)
+        window = max(float(cfg.get("catch_window") or 2.0), start + CATCH_FRAME_GAP)
+        self._sleep(start)
+        frames, spent = [], start
+        while spent < window and len(frames) < CATCH_MAX_FRAMES:
             try:
                 frames.append(screen.grab(area))
             except Exception as exc:
                 self.log(f"Не удалось снять уведомление о рыбе: {exc}")
                 break
-            if i < CATCH_FRAMES - 1:
-                self._sleep(CATCH_FRAME_GAP)
-                spent += CATCH_FRAME_GAP
+            self._sleep(CATCH_FRAME_GAP)
+            spent += CATCH_FRAME_GAP
         if frames:
             self.on_catch(frames)
         self._sleep(max(end_delay - spent, 0.0))

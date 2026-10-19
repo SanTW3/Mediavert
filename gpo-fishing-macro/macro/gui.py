@@ -140,6 +140,8 @@ class App:
         self._rebinding = None
         self._preview = None
         self._overlay = None
+        self._point_labels = {}
+        self._guide = None
         self._stats = {}
         self._was_running = None
 
@@ -165,6 +167,8 @@ class App:
         self._start_hotkeys()
         self.root.protocol("WM_DELETE_WINDOW", self.exit)
         self.root.after(50, self._poll)
+        if not self.cfg.get("guide_shown"):
+            self.root.after(700, self.open_guide)  # первый запуск — сразу гайд
 
     # ---------- переменные, связанные с конфигом ----------
     def var(self, key, kind=float):
@@ -259,18 +263,25 @@ class App:
         row = self._row(body)
         lbl = tk.Label(body, text=fmt_point(self.cfg.get(key)), font=TK_LABEL, bg=CARD,
                        fg=GREEN if self.cfg.get(key) else MUTED)
+        self._point_labels[key] = lbl
 
         def pick():
-            def done(point):
-                self.cfg[key] = point
-                lbl.configure(text=fmt_point(point), fg=GREEN)
-                self._save()
-            self._open_overlay(lambda: PointPicker(self.root, hint, done))
+            self.pick_point(key, hint)
 
         ctk.CTkButton(body, text=button, width=170, height=32, fg_color=FIELD, hover_color=ACCENT,
                       border_color=CARD_BORDER, border_width=1, anchor="w", command=pick).grid(
             row=row, column=0, sticky="w", pady=4)
         lbl.grid(row=row, column=1, sticky="e", pady=4)
+
+    def pick_point(self, key, hint):
+        """Выбор точки на экране (кнопки «… точка» и гайд)."""
+        def done(point):
+            self.cfg[key] = point
+            lbl = self._point_labels.get(key)
+            if lbl is not None:
+                lbl.configure(text=fmt_point(point), fg=GREEN)
+            self._save()
+        self._open_overlay(lambda: PointPicker(self.root, hint, done))
 
     def _buttons(self, body, *buttons):
         row = tk.Frame(body, bg=CARD)
@@ -302,6 +313,10 @@ class App:
                                        hover_color=GREEN_HOVER, border_width=2, border_color=HILITE,
                                        command=self.engine.toggle)
         self.start_btn.place(relx=1, x=-20, y=26, anchor="ne")
+        ctk.CTkButton(header, text="?  ГАЙД", width=74, height=22, corner_radius=0, fg_color="#0b3478",
+                      hover_color=ACCENT, border_width=1, border_color=HILITE, text_color=HILITE,
+                      font=(self.display, 12, "bold", "italic"), command=self.open_guide).place(
+            relx=1, x=-150, y=78, anchor="ne")
         self.start_hint = ctk.CTkLabel(header, text="", font=(FONT, 11, "bold"), text_color=HILITE,
                                        fg_color="#0b3478", corner_radius=0, height=18)
         self.start_hint.place(relx=1, x=-20, y=78, anchor="ne")
@@ -390,7 +405,7 @@ class App:
         row = self._row(cl)
         self._label(cl, row, "Область уведомления", "Где игра пишет, какая рыба поймана (иконка + название)")
         self.catch_area_label = tk.Label(cl, text=self._catch_area_text(), font=TK_LABEL, bg=CARD,
-                                         fg=GREEN if self.cfg["catch_area"] else MUTED)
+                                         fg=GREEN if self.cfg["catch_area"] else HILITE)
         self.catch_area_label.grid(row=row, column=1, sticky="e", pady=4)
         self._num(cl, "Снимок через", "catch_capture_delay",
                   "Сколько ждать после конца мини-игры, пока появится уведомление", unit="с")
@@ -663,6 +678,13 @@ class App:
                              log=lambda t: self.events.put(("log", t)))
         threading.Thread(target=job, daemon=True).start()
 
+    def open_guide(self):
+        if self._guide is not None and self._guide.winfo_exists():
+            self._guide.lift()
+            return
+        from .guide import Guide
+        self._guide = Guide(self)
+
     def _open_preview(self):
         if self._preview and self._preview.winfo_exists():
             self._preview.lift()
@@ -802,7 +824,7 @@ class App:
 
     def _catch_area_text(self):
         a = self.cfg.get("catch_area")
-        return f"{a[2]}×{a[3]} в X {a[0]}, Y {a[1]}" if a else "Не задана"
+        return f"{a[2]}×{a[3]} в X {a[0]}, Y {a[1]}" if a else "Авто: центр окна Roblox"
 
     def _pick_catch_area(self):
         def done(area):
@@ -816,10 +838,22 @@ class App:
     def _on_catch(self, frames):
         """Из потока макроса: распознаём в отдельном потоке, чтобы не тормозить рыбалку."""
         def job():
+            try:
+                record()
+            except Exception as exc:  # раньше такие ошибки терялись молча
+                self.log_threadsafe(f"Журнал улова: ошибка {exc!r}")
+
+        def record():
+            from . import ocr
             log = self.catch_log
             catch = log.add_frames(frames)
             if catch is None:
-                self.log_threadsafe("Уведомления «New Item <рыба>» в области не было — улов не записан")
+                if sys.platform == "win32" and not ocr.available():
+                    self.log_threadsafe("Журнал улова: Windows OCR недоступен — названия рыб не читаются")
+                    return
+                seen = max(log.last_texts[-len(frames):], key=len) if log.last_texts else ""
+                self.log_threadsafe("Уведомления «New Item <рыба>» не нашёл — улов не записан. "
+                                    f"Прочитано: «{seen[:80] or 'ничего'}». Проверьте область уведомления")
                 return
             name = log.name_of(catch)
             self.log_threadsafe(f"Поймано: {name} (×{catch.count})")
@@ -836,10 +870,8 @@ class App:
         threading.Thread(target=job, daemon=True).start()
 
     def _test_catch(self):
-        area = self.cfg.get("catch_area")
-        if not area:
-            self.log("Сначала выберите область уведомления")
-            return
+        from .engine import catch_area
+        area = catch_area(self.cfg)
 
         def job():
             from . import fishdb, ocr
@@ -898,6 +930,7 @@ class App:
             "blackout": self.blackout.active,
             "alarm": alarms.reason if alarms.active else None,
             "fish": self.catch_log.status(),
+            "fish_log": bool(self.cfg.get("catch_log_enabled")),
         }
 
     def _new_secret(self):

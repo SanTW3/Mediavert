@@ -34,6 +34,11 @@ def screenshot_png():
     return mss.tools.to_png(shot.rgb, shot.size)
 
 
+def primary_monitor():
+    sct = _sct()
+    return sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+
+
 def grab_monitor(step=8):
     """Основной монитор, прореженный в step раз — для проверки на чёрный экран."""
     sct = _sct()

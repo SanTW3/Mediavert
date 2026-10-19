@@ -169,6 +169,7 @@ class CatchLog:
         self.cfg = cfg if cfg is not None else {}
         self.log = log
         self.items = []
+        self.last_texts = []      # что OCR прочитал в последних снимках — для диагностики
         self._lock = threading.Lock()
 
     def reset(self):
@@ -189,6 +190,7 @@ class CatchLog:
         if lines is None:
             lines = [{"text": text, "words": []}] if text is not None else ocr.read_lines(
                 np.ascontiguousarray(np.asarray(rgb)[:, :, :3]))
+        self.last_texts = (self.last_texts + [" | ".join(line["text"] for line in lines if line["text"])])[-12:]
         notice = read_notice(rgb, lines)
         if not notice:
             return None

@@ -43,11 +43,13 @@ def send_ntfy(server, topic, title, message):
     _post(server.rstrip("/"), body, {"Content-Type": "application/json"})
 
 
-def send_telegram(token, chat_id, text, screenshot_png=None):
+def send_telegram(token, chat_id, text, screenshot_png=None, reply_markup=None):
     base = f"https://api.telegram.org/bot{token}"
     if screenshot_png:
-        body, ctype = _multipart({"chat_id": chat_id, "caption": text[:1000]},
-                                 {"photo": ("screen.png", screenshot_png, "image/png")})
+        fields = {"chat_id": chat_id, "caption": text[:1000]}
+        if reply_markup:
+            fields["reply_markup"] = reply_markup
+        body, ctype = _multipart(fields, {"photo": ("screen.png", screenshot_png, "image/png")})
         _post(base + "/sendPhoto", body, {"Content-Type": ctype})
     else:
         data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()

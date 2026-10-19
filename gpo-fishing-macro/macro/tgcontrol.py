@@ -22,6 +22,10 @@ BUTTONS = [
     [{"text": "🐟 Улов", "callback_data": "catches"},
      {"text": "⏹ Остановить макрос", "callback_data": "stop"}],
 ]
+# Под списком улова: очистка — с подтверждением, чтобы не стереть случайно
+CATCH_BUTTONS = [[{"text": "🗑 Очистить список", "callback_data": "reset_ask"}]]
+RESET_CONFIRM = [[{"text": "✅ Да, очистить", "callback_data": "reset_catches"},
+                  {"text": "Отмена", "callback_data": "reset_cancel"}]]
 COMMANDS = {"/menu": "menu", "/start": "menu", "/panel": "panel", "/screen_on": "screen_on", "/screen_off": "screen_off",
             "/shot": "shot", "/status": "status", "/stop": "stop", "/catches": "catches",
             "/reset_catches": "reset_catches"}
@@ -168,7 +172,8 @@ class TelegramControl:
         return token, chat
 
     def send(self, text, buttons=True):
-        """Не блокирует: отправка идёт в отдельном потоке (вызывается из окна)."""
+        """Не блокирует: отправка идёт в отдельном потоке (вызывается из окна).
+        buttons: True — меню бота, False — без кнопок, список рядов — свои кнопки."""
         if self._creds()[0]:
             threading.Thread(target=self._send, args=(text, buttons), daemon=True).start()
 
@@ -177,7 +182,9 @@ class TelegramControl:
         if not token:
             return
         params = {"chat_id": chat, "text": text}
-        if buttons:
+        if isinstance(buttons, list):
+            params["reply_markup"] = json.dumps({"inline_keyboard": buttons})
+        elif buttons:
             rows = list(BUTTONS)
             link = self._link()
             if link:
@@ -208,25 +215,28 @@ class TelegramControl:
         _call(token, "setChatMenuButton", {"chat_id": chat, "menu_button": json.dumps(button)})
         self._menu_link = link
 
-    def send_photo(self, png, caption):
+    def send_photo(self, png, caption, buttons=None):
         token, chat = self._creds()
         if token:
             try:
-                alarm.send_telegram(token, chat, caption, png)
+                markup = json.dumps({"inline_keyboard": buttons}) if buttons else None
+                alarm.send_telegram(token, chat, caption, png, reply_markup=markup)
             except Exception as exc:
                 self.log(f"Telegram: не удалось отправить скриншот: {explain(exc)}")
 
-    def send_media(self, data, kind, caption):
-        """Картинка (png) или анимация (gif) с подписью."""
+    def send_media(self, data, kind, caption, buttons=None):
+        """Картинка (png) или анимация (gif) с подписью и, если нужно, кнопками под ней."""
         token, chat = self._creds()
         if not token:
             return
         if kind != "gif":
-            self.send_photo(data, caption)
+            self.send_photo(data, caption, buttons)
             return
         try:
-            body, ctype = alarm._multipart({"chat_id": chat, "caption": caption[:1000]},
-                                           {"animation": ("catch.gif", data, "image/gif")})
+            fields = {"chat_id": chat, "caption": caption[:1000]}
+            if buttons:
+                fields["reply_markup"] = json.dumps({"inline_keyboard": buttons})
+            body, ctype = alarm._multipart(fields, {"animation": ("catch.gif", data, "image/gif")})
             alarm._post(f"{API}/bot{token}/sendAnimation", body, {"Content-Type": ctype})
         except Exception as exc:
             self.log(f"Telegram: не удалось отправить анимацию: {explain(exc)}")

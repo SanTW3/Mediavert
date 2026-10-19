@@ -15,7 +15,7 @@ import time
 import urllib.parse
 import urllib.request
 
-COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches"}
+COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches", "reset_catches"}
 # У бесплатного ntfy.sh лимит ~250 сообщений в сутки с одного IP. Раньше статус уходил каждые 10–30 с —
 # за час-полтора лимит кончался (HTTP 429), панель показывала «ПК не в сети», а заодно переставали
 # доходить тревоги ntfy. Теперь статус шлём, только когда панель открыта (она присылает «ping»),

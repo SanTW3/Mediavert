@@ -974,13 +974,15 @@ class App:
         log = self.catch_log
 
         def job():
+            from .tgcontrol import CATCH_BUTTONS
             data, kind = log.render()
-            self.tg.send_media(data, kind, log.summary_text())
+            self.tg.send_media(data, kind, log.summary_text(), buttons=CATCH_BUTTONS if log.total else None)
         threading.Thread(target=job, daemon=True).start()
 
     def _clear_catches(self):
         self.catch_log.reset()
         self.log("Журнал улова очищен")
+        self.remote.poke()
 
     def _webapp_link(self):
         if not (self.cfg.get("remote_enabled") and str(self.cfg.get("webapp_url") or "").startswith("https://")):
@@ -1025,9 +1027,21 @@ class App:
         if cmd == "catches":
             self._send_catches()
             return
+        if cmd == "reset_ask":
+            from .tgcontrol import RESET_CONFIRM
+            total = self.catch_log.total
+            if not total:
+                self.tg.send("🐟 Список улова и так пуст", buttons=False)
+            else:
+                self.tg.send(f"Очистить список улова? Сейчас в нём {total} рыб", buttons=RESET_CONFIRM)
+            return
+        if cmd == "reset_cancel":
+            self.tg.send("Список улова не тронут", buttons=False)
+            return
         if cmd == "reset_catches":
             self.catch_log.reset()
-            self.tg.send("🐟 Журнал улова очищен", buttons=False)
+            self.log("Журнал улова очищен из Telegram")
+            self.tg.send("🗑 Список улова очищен", buttons=False)
             return
         if cmd == "panel":
             if self._webapp_link():

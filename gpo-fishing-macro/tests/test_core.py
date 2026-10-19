@@ -863,3 +863,26 @@ def test_telegram_diagnose_explains_problems(monkeypatch):
     monkeypatch.setattr(tc, "_call", fake({"getMe": tc.urllib.error.URLError("timed out")}))
     assert "VPN" in tc.diagnose(cfg)[1][-1]
     assert "другой программе" in tc.explain(tc.TelegramError(409, "Conflict: terminated by other getUpdates"))
+
+
+def test_catch_list_has_clear_button_with_confirmation(monkeypatch):
+    from macro import tgcontrol as tc
+    calls = []
+    monkeypatch.setattr(tc, "_call", lambda token, method, params=None, timeout=15: calls.append((method, params)) or {})
+    cfg = dict(config.DEFAULTS, tg_control=True, telegram_token="1" * 9 + ":" + "X" * 35, telegram_chat_id="42")
+    bot = tc.TelegramControl(cfg, lambda c: None, log=lambda t: None)
+    try:
+        bot._send("Очистить список улова? Сейчас в нём 5 рыб", tc.RESET_CONFIRM)
+        markup = json.loads(next(p for m, p in calls if m == "sendMessage")["reply_markup"])
+        assert [b["callback_data"] for b in markup["inline_keyboard"][0]] == ["reset_catches", "reset_cancel"]
+        assert tc.CATCH_BUTTONS[0][0]["callback_data"] == "reset_ask"
+        # Нажатие кнопки под списком доходит до окна как команда
+        got = []
+        bot.on_command = got.append
+        bot._handle("t", "42", {"callback_query": {"id": "1", "data": "reset_ask",
+                                                    "message": {"chat": {"id": 42, "type": "private"}}}})
+        assert got == ["reset_ask"]
+    finally:
+        bot.stop()
+    from macro import remote
+    assert "reset_catches" in remote.COMMANDS                 # кнопка «Очистить» в мини-приложении

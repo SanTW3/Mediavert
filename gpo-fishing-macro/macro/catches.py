@@ -8,6 +8,7 @@
 название и рамка переливаются радугой — тогда в Telegram уходит анимация (GIF).
 """
 import colorsys
+import string
 import io
 import re
 import threading
@@ -43,7 +44,8 @@ def clean_name(text):
 
 
 # «New Item <Fangfish>»: название в угловых скобках. OCR иногда путает скобки — берём похожие
-BRACKETED = re.compile(r"[<«‹(\[{]\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*[>»›)\]}]")
+# OCR путает скобки с кавычками, а закрывающую иногда теряет в конце строки
+BRACKETED = re.compile(r"(?<![A-Za-z])[<«‹(\[{'\"‘“`]\s*([A-Za-z][A-Za-z0-9 \-]{1,40}?)\s*(?:[>»›)\]}'\"’”]|[-~_.]*\W*$)")
 # Шрифт игры OCR читает как «Nev ltem» — допускаем такие ошибки
 NEW_ITEM = re.compile(r"ne[wv]{1,2}\s*[il1|!]\s*tem\s*[:\-]?\s*[<«‹(\[{]?\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*"
                       r"(?:[>»›)\]}]|$)", re.IGNORECASE)
@@ -57,8 +59,8 @@ def parse_name(text):
             # Одиночные буквы — мусор от столбов и бликов рядом с текстом («Crimson Polka x Puffer»)
             words = [w for w in m.group(1).split() if len(w) > 1]
             name = " ".join(words).strip(" -'")
-            if len(name) >= 2:
-                return name
+            if len(name) >= 3:
+                return string.capwords(name)   # в игре названия с заглавных: «Crimson Polka Puffer»
     return None
 
 
@@ -128,12 +130,12 @@ def ocr_variants(rgb):
     """Снимок для OCR в нескольких видах — шрифт игры (обводка, цветные буквы над водой)
     Windows OCR читает плохо, поэтому пробуем по очереди."""
     a = np.ascontiguousarray(np.asarray(rgb)[:, :, :3])
-    yield a
     for y0, y1 in text_bands(a):          # каждая строка отдельно, крупно, маской заливки
         line = a[y0:y1]
         yield _scale(fill_mask(line), 3)
         yield _scale(line, 3)
     yield _scale(fill_mask(a), 2)
+    yield a
 
 
 def text_rarity(rgb, rect=None):
@@ -185,6 +187,22 @@ def text_rarity(rgb, rect=None):
     if 245 <= main <= 320:
         return "epic"
     return None
+
+
+def best_name(names, cfg=None):
+    """Лучшее из прочитанных названий: известное каталогу → чаще встречается → больше слов
+    (ошибка «polkaxpuffer» склеивает слова) → длиннее."""
+    if not names:
+        return None
+    key = lambda n: re.sub(r"[^a-z]", "", n.lower())
+    counts = {}
+    for n in names:
+        counts[key(n)] = counts.get(key(n), 0) + 1
+
+    def score(n):
+        known = fishdb.find_by_name(n, cfg) is not None
+        return (known, counts[key(n)], len(n.split()), len(n))
+    return max(names, key=score)
 
 
 def notice_rarity(rgb):
@@ -310,21 +328,18 @@ class CatchLog:
         self.last_texts = (self.last_texts + [" | ".join(line["text"] for line in lines if line["text"])])[-24:]
 
     def read_any(self, rgb):
-        """Прочитать уведомление, перебирая варианты снимка (см. ocr_variants)."""
+        """Прочитать уведомление: все варианты снимка (ocr_variants) дают кандидатов,
+        лучший выбирается голосованием — шрифт игры OCR читает с разными ошибками."""
         a = np.ascontiguousarray(np.asarray(rgb)[:, :, :3])
-        for i, img in enumerate(ocr_variants(a)):
+        names = []
+        for img in ocr_variants(a):
             lines = ocr.read_lines(img)
             self._remember(lines)
-            text = "\n".join(line["text"] for line in lines)
-            name = parse_name(text)
-            if not name:
-                continue
-            if i == 0:
-                return read_notice(a, lines)
-            # В остальных вариантах рамки слов не в координатах снимка — редкость меряем
-            # по цвету самой яркой цветной строки снимка (название рыбы — единственное цветное)
-            return name, notice_rarity(a)
-        return None
+            name = parse_name("\n".join(line["text"] for line in lines))
+            if name:
+                names.append(name)
+        name = best_name(names, self.cfg)
+        return (name, notice_rarity(a)) if name else None
 
     def add_frames(self, frames):
         """Несколько снимков подряд (уведомление появляется и гаснет) — берём первый с рыбой."""

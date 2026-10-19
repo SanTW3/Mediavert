@@ -581,6 +581,12 @@ def test_windows_ocr_reads_game_notification():
 
 
 def test_parse_name_drops_stray_letters():
-    from macro.catches import parse_name
+    from macro.catches import best_name, parse_name
     assert parse_name("New Item <Crimson Polka x Puffer>") == "Crimson Polka Puffer"
     assert parse_name("Nev ltem <Fangfish>") == "Fangfish"
+    # Так Windows OCR читал скрин из игры в разных вариантах подготовки картинки
+    assert parse_name("Item <Crimson polkaxpuffer>") == "Crimson Polkaxpuffer"
+    assert parse_name("'Crimson polka puffer-\ufffd") == "Crimson Polka Puffer"
+    assert best_name(["Crimson Polkaxpuffer", "Crimson Polka Puffer"]) == "Crimson Polka Puffer"
+    for junk in ("ISLAND OF ZOU", "STUDS", "- ONE", "t-QOTVCTED", "ECT D", "It's a nice day"):
+        assert parse_name(junk) is None

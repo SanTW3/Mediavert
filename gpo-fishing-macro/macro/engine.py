@@ -8,8 +8,8 @@ from .detector import black_fraction, detect
 from .watchdog import Watchdog
 
 
-CATCH_FRAME_GAP = 0.25   # с между снимками уведомления о рыбе
-CATCH_MAX_FRAMES = 12
+CATCH_FRAME_GAP = 0.4    # с между снимками уведомления о рыбе
+CATCH_MAX_FRAMES = 6
 
 
 def catch_area(cfg):

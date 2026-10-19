@@ -117,14 +117,22 @@ Telegram, мини-приложение и горячие клавиши. Сно
 в уведомлении: голубой — редкая, фиолетовый — эпическая, разноцветный — легендарная, белый — обычная.
 Свои названия можно вписать в **Рыбалка → Каталог рыб**.
 
-OCR иногда путает 1–2 буквы («Fangflsh», «Crimson Polkaxpuffer»). Поэтому прочитанное название сверяется
-со списком рыб игры (Swordfish, Dark Skeletal Shark, Golden Ribbon Angelfish, Golden Tigerfin, Golden Polka Puffer,
-Candy Corn Squid, Jack-O'-Bite, Skeletal Shark, Fangfish, Exotic Tigerfin, Crimson Snapper, Zebra Ribbon Angelfish,
-Crimson Polka Puffer, Tigerfin, Blue-Lip Grouper) и с каталогом с погрешностью: 1 буква в коротких названиях,
-2 в средних, 3 в длинных. Если похожи сразу две рыбы, макрос не угадывает. При запуске записи каталога
-с опечатками исправляются, а обрывки «SAFE ZONE PROTECTED» от старых версий удаляются.
+Названия подбираются **только из списка рыб игры**: Swordfish, Dark Skeletal Shark, Golden Ribbon Angelfish,
+Golden Tigerfin, Golden Polka Puffer, Candy Corn Squid, Jack-O'-Bite, Skeletal Shark, Fangfish, Exotic Tigerfin,
+Crimson Snapper, Zebra Ribbon Angelfish, Crimson Polka Puffer, Tigerfin, Blue-Lip Grouper, Anglerfish
+(`KNOWN_NAMES` в `macro/fishdb.py`). Шрифт игры Windows OCR читает с ошибками, поэтому:
 
-**Новые рыбы** добавляются в каталог сами. В уведомлении нет иконки, поэтому у новой рыбы сначала
+- допускаются перепутанные буквы, примерно каждая третья-четвёртая («Ansterfish» → Anglerfish);
+- «<» перед названием OCR читает как букву («Czebra», «Cg0tden»), это учитывается;
+- строку уведомления OCR иногда режет на куски, поэтому куски склеиваются, а обрезанное название
+  узнаётся по словам («Dark Shark» → Dark Skeletal Shark, «Gotden Ribbon» → Golden Ribbon Angelfish);
+- обрывок, который подходит к нескольким рыбам («Shark», «Crimson», «Putter»), не угадывается.
+
+Если «New Item» прочитан, а название не похоже ни на одну рыбу, улов всё равно засчитывается как
+**Unknown Fish**, а в журнал пишется, что именно прочитано. Новые названия в каталог больше не добавляются.
+При запуске записи каталога с ошибками распознавания исправляются, а мусор удаляется.
+
+**Рыбы из списка без иконки** (Swordfish, Fangfish, Golden Ribbon Angelfish, Anglerfish) добавляются в каталог при первой поимке. В уведомлении нет иконки, поэтому у новой рыбы сначала
 силуэт цвета её редкости. Если это рыба с иконкой со скрина, выберите её в **«Иконка со скрина…»**:
 название перейдёт к настоящей иконке. Выученные рыбы хранятся в папке `fish_learned` рядом с программой,
 её можно перенести вместе с exe.

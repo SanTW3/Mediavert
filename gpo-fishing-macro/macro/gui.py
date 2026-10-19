@@ -876,7 +876,11 @@ class App:
                                     f"Прочитано: «{seen[:80] or 'ничего'}». Проверьте область уведомления")
                 return
             name = log.name_of(catch)
-            self.log_threadsafe(f"Поймано: {name} (×{catch.count})")
+            if catch.fish.get("name") == fishdb.UNKNOWN_NAME:
+                raw = " / ".join(dict.fromkeys(log.last_raw)) or "?"
+                self.log_threadsafe(f"Поймано: рыба не распознана (прочитано «{raw[:80]}»), записана как {name}")
+            else:
+                self.log_threadsafe(f"Поймано: {name} (×{catch.count})")
             if catch.new:
                 self.log_threadsafe(f"🆕 Новая рыба в каталоге: {name}. Иконку можно привязать в «Рыбалка → Каталог рыб»")
                 self.events.put(("catalog", None))
@@ -903,13 +907,17 @@ class App:
                 return
             text = " | ".join(line["text"] for line in lines) or "ничего"
             self.log_threadsafe(f"Текст в области: {text}")
-            notice = read_notice(rgb, lines, self.cfg)
+            notice = read_notice(rgb, lines, self.cfg) or self.catch_log.read_any(rgb)
             if not notice:
                 self.log_threadsafe("Уведомления «New Item <рыба>» нет — такие надписи макрос пропускает")
                 return
             name, rarity = notice
             title = fishdb.rarity_info(rarity)["title"].lower() if rarity else "не определена"
             fish = fishdb.find_by_name(name, self.cfg)
+            if name == fishdb.UNKNOWN_NAME:
+                self.log_threadsafe("«New Item» есть, но название не похоже ни на одну рыбу из списка — "
+                                    "улов запишется как Unknown Fish")
+                return
             known = "уже в каталоге" if fish else "новая — добавится при поимке"
             self.log_threadsafe(f"Рыба: {name}, редкость по цвету: {title}, {known}")
         threading.Thread(target=job, daemon=True).start()

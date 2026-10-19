@@ -75,6 +75,26 @@ def parse_name(text):
     return None
 
 
+CLOSE = re.compile(r"[>»›)\]}]")
+
+
+def item_tail(text):
+    """Текст после «New Item» до закрывающей скобки. Строки склеиваем: Windows OCR иногда режет
+    уведомление на куски («Item <Crimson» | «Polka Puffer>»). None — слова «Item» нет."""
+    joined = " ".join((text or "").split())
+    m = ITEM.search(joined)
+    if not m:
+        return None
+    tail = CLOSE.split(m.group(1), 1)[0]
+    tail = tail.lstrip("<«‹([{'\"‘“` ").strip()
+    return tail or None
+
+
+def resolve(raw, cfg=None):
+    """Рыба из списка по тексту после «Item»: название или UNKNOWN_NAME, если не похоже ни на одну."""
+    return fishdb.match_name(raw, cfg) or fishdb.UNKNOWN_NAME
+
+
 def weak_names(text):
     """Названия в угловых скобках без «Item» — только для исправления пробелов, не для записи."""
     out = []
@@ -84,15 +104,6 @@ def weak_names(text):
             if name:
                 out.append(name)
     return out
-
-
-def _letters(n):
-    return re.sub(r"[^a-z]", "", n.lower())
-
-
-def _is_subsequence(short, long):
-    it = iter(long)
-    return all(ch in it for ch in short)
 
 
 def _dist_to_dark(dark, axis, reverse):
@@ -220,29 +231,13 @@ def text_rarity(rgb, rect=None):
     return None
 
 
-def best_name(names, cfg=None, weak=()):
-    """Лучшее из прочитанных названий (известное — в правильном написании): известное каталогу → чаще встречается → больше слов
-    (ошибка «polkaxpuffer» склеивает слова) → длиннее. weak — названия без «Item»: если такое же
-    название, только без 1–2 лишних букв и с правильными пробелами, берём его написание."""
-    if not names:
-        return None
-    counts = {}
-    for n in names:
-        counts[_letters(n)] = counts.get(_letters(n), 0) + 1
-
-    def score(n):
-        known = fishdb.find_by_name(n, cfg) is not None
-        return (known, counts[_letters(n)], len(n.split()), len(n))
-    best = max(names, key=score)
-    right = fishdb.canonical(best, cfg)
-    if right:
-        return right
-    for w in sorted(weak, key=lambda w: (-len(w.split()), -len(w))):
-        kb, kw = _letters(best), _letters(w)
-        if (len(w.split()) > len(best.split()) and 0 <= len(kb) - len(kw) <= 2
-                and len(kw) >= 3 and _is_subsequence(kw, kb)):
-            return w
-    return best
+def best_name(names, cfg=None):
+    """Голосование по вариантам OCR: чаще прочитанная рыба из списка; Unknown Fish — только
+    если ни один вариант не узнал рыбу."""
+    known = [n for n in names if n and n != fishdb.UNKNOWN_NAME]
+    if not known:
+        return fishdb.UNKNOWN_NAME if names else None
+    return max(known, key=lambda n: (known.count(n), len(n)))
 
 
 def notice_rarity(rgb):
@@ -258,35 +253,30 @@ def notice_rarity(rgb):
     return best or "common"
 
 
-def known_name(raw, cfg=None, strict=True):
-    """Название с правильным написанием. strict=False — строка без «Item»: её берём, только если
-    это известная рыба (с погрешностью в 1–3 буквы), иначе None."""
-    right = fishdb.canonical(raw, cfg, learned=strict) if raw else None
-    return right or (raw if strict else None)
-
-
 def read_notice(rgb, lines, cfg=None):
     """(название, редкость) из уведомления «New Item <…>» или None."""
-    for line in lines:
-        name = parse_name(line["text"])
-        if not name:
-            # «Item» OCR потерял, но в скобках название известной рыбы — тоже засчитываем
-            name = next((w for w in weak_names(line["text"]) if known_name(w, cfg, strict=False)), None)
-        if not name:
-            continue
-        # Рамка слов, из которых состоит название, — по ним меряем цвет
-        parts = set(re.sub(r"[^a-z0-9 ]", " ", name.lower()).split())
-        rects = [r for t, r in line.get("words", ())
-                 if set(re.sub(r"[^a-z0-9 ]", " ", t.lower()).split()) & parts]
-        rect = None
-        if rects:
-            x0 = min(r[0] for r in rects)
-            y0 = min(r[1] for r in rects)
-            x1 = max(r[0] + r[2] for r in rects)
-            y1 = max(r[1] + r[3] for r in rects)
-            rect = (x0, y0, x1 - x0, y1 - y0)
-        return known_name(name, cfg), (text_rarity(rgb, rect) if rect else None)
-    return None
+    text = "\n".join(line["text"] for line in lines)
+    raw = item_tail(text)
+    if raw:
+        name = resolve(raw, cfg)
+    else:
+        # «Item» OCR потерял, но в скобках название рыбы из списка — тоже засчитываем
+        name = next((m for m in (fishdb.match_name(w, cfg) for w in weak_names(text)) if m), None)
+        raw = name
+    if not name:
+        return None
+    # Рамка слов названия — по ней меряем цвет (редкость)
+    parts = set(fishdb.words_of(raw)) | set(fishdb.words_of(name))
+    rects = [r for line in lines for t, r in line.get("words", ())
+             if set(fishdb.words_of(t)) & parts]
+    rect = None
+    if rects:
+        x0 = min(r[0] for r in rects)
+        y0 = min(r[1] for r in rects)
+        x1 = max(r[0] + r[2] for r in rects)
+        y1 = max(r[1] + r[3] for r in rects)
+        rect = (x0, y0, x1 - x0, y1 - y0)
+    return name, (text_rarity(rgb, rect) if rect else None)
 
 
 def fmt_peli(n):
@@ -328,6 +318,7 @@ class CatchLog:
         self.log = log
         self.items = []
         self.last_texts = []      # что OCR прочитал в последних снимках — для диагностики
+        self.last_raw = []        # текст после «Item» в последнем уведомлении
         self._lock = threading.Lock()
 
     def reset(self):
@@ -355,7 +346,11 @@ class CatchLog:
         if not notice:
             return None
         name, rarity = notice
-        fish = fishdb.find_by_name(name, self.cfg)
+        if name == fishdb.UNKNOWN_NAME:
+            # «New Item» был, но название не разобрать: считаем улов, в каталог мусор не пишем
+            fish = fishdb.unknown_fish()
+        else:
+            fish = fishdb.find_by_name(name, self.cfg)
         new = False
         if fish is None:
             # Такой рыбы ещё нет — в каталог: название из уведомления, редкость по цвету текста,
@@ -381,21 +376,21 @@ class CatchLog:
         """Прочитать уведомление: все варианты снимка (ocr_variants) дают кандидатов,
         лучший выбирается голосованием — шрифт игры OCR читает с разными ошибками."""
         a = np.ascontiguousarray(np.asarray(rgb)[:, :, :3])
-        names, weak = [], []
+        names = []
+        self.last_raw = []
         for img in ocr_variants(a):
             lines = ocr.read_lines(img)
             self._remember(lines)
             text = "\n".join(line["text"] for line in lines)
-            name = parse_name(text)
-            if name:
-                names.append(known_name(name, self.cfg))
+            raw = item_tail(text)
+            if raw:
+                self.last_raw.append(raw)
+                names.append(resolve(raw, self.cfg))
             for w in weak_names(text):
-                right = known_name(w, self.cfg, strict=False)
+                right = fishdb.match_name(w, self.cfg)
                 if right:
-                    names.append(right)     # известная рыба, хоть «Item» и не прочитан
-                else:
-                    weak.append(w)
-        name = best_name(names, self.cfg, weak)
+                    names.append(right)     # рыба из списка, хоть «Item» и не прочитан
+        name = best_name(names, self.cfg)
         return (name, notice_rarity(a)) if name else None
 
     def add_frames(self, frames):

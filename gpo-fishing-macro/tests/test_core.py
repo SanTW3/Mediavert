@@ -653,9 +653,8 @@ def test_parse_name_drops_stray_letters():
     # Без «Item» строка не засчитывается, но помогает поправить пробелы в названии
     assert parse_name("'Crimson polka puffer-\ufffd") is None
     assert weak_names("'Crimson polka puffer-\ufffd") == ["Crimson Polka Puffer"]
-    assert best_name(["Moon Eelxfish"], weak=["Moon Eel Fish"]) == "Moon Eel Fish"
-    assert best_name(["Moon Eelxfish"], weak=["Saf Zone Ot Cted"]) == "Moon Eelxfish"
-    assert best_name(["Crimson Polkaxpuffer", "Ccrimson"]) == "Crimson Polka Puffer"   # известная рыба
+    assert best_name(["Unknown Fish", "Crimson Polka Puffer", "Unknown Fish"]) == "Crimson Polka Puffer"
+    assert best_name(["Unknown Fish"]) == "Unknown Fish" and best_name([]) is None
     for junk in ("ISLAND OF ZOU", "STUDS", "- ONE", "t-QOTVCTED", "ECT D", "It's a nice day",
                  "'Saf Zone Ot Cted", "'SAF OW OT CTED", "(Ot Cted)", "<Safe Zone Protected>",
                  "SAFE ZONE PROTECTED", "System item", "Items"):
@@ -697,10 +696,10 @@ def test_tidy_learned_fixes_old_entries():
     sword = fishdb.add_fish(fishdb.placeholder_icon("epic"), "Swordflsh", rarity="epic")
     other = fishdb.add_fish(Img.new("RGBA", (8, 8)), "Moon Eel", rarity="rare")
     moves = dict(fishdb.tidy_learned())
-    assert moves == {junk["id"]: None, typo["id"]: "01"}
+    assert moves == {junk["id"]: None, typo["id"]: "01", other["id"]: None}   # «Moon Eel» нет в игре
     assert fishdb.by_id(junk["id"]) is None and fishdb.by_id(typo["id"]) is None
     assert fishdb.display_name(fishdb.by_id(sword["id"])) == "Swordfish"
-    assert fishdb.display_name(fishdb.by_id(other["id"])) == "Moon Eel"
+    assert fishdb.by_id(other["id"]) is None
     assert fishdb.display_name(fishdb.by_id("01")) == "Crimson Polka Puffer"
 
 
@@ -733,3 +732,41 @@ def test_mqtt_commands_are_signed_and_not_replayable():
     assert len(mqttlink.split_urls(config.DEFAULTS["mqtt_url"])) == 4
     link = remote.webapp_link(dict(config.DEFAULTS, remote_secret="X" * 10))
     assert "m=wss%3A%2F%2Fbroker.emqx.io" in link
+
+
+def test_overnight_ocr_reads_resolve_to_fish_list():
+    """Что Windows OCR прочитал за ночь рыбалки: опечатки, «<» как буква, обрезанные названия."""
+    from macro import fishdb
+    reads = {
+        "Candy Corn": "Candy Corn Squid", "Canqlerfish": "Anglerfish", "Aack-0": "Jack-O'-Bite",
+        "Czebra": "Zebra Ribbon Angelfish", "Swordfish": "Swordfish", "Ansterfish": "Anglerfish",
+        "Zketevat Shark": "Skeletal Shark", "Gowen-tiqerfin": "Golden Tigerfin", "Zsvordfis": "Swordfish",
+        "Cg0tden Doua Putter": "Golden Polka Puffer", "Gotden Ribbon": "Golden Ribbon Angelfish",
+        "Dark Shark": "Dark Skeletal Shark", "Dark Skdetacshstk": "Dark Skeletal Shark",
+        "Crimson Snapper ISLAND OF ZOU": "Crimson Snapper",
+    }
+    for raw, right in reads.items():
+        assert fishdb.match_name(raw) == right, raw
+    # Обрывок подходит к нескольким рыбам — не угадываем
+    for raw in ("Shark", "Gotden", "Crimson", "Serk", "Shstk", "Putter", "Ribbon Angelfish", "Polka Puffer",
+                "Saf Zone Ot Cted", "ISLAND OF ZOU", "Common Fish Bait x93"):
+        assert fishdb.match_name(raw) is None, raw
+    # Все рыбы из списка узнаются сами по себе и не путаются друг с другом
+    for name in fishdb.KNOWN_NAMES:
+        assert fishdb.match_name(name) == name
+
+
+def test_item_line_split_by_ocr_and_unknown_fish():
+    from macro import fishdb
+    from macro.catches import CatchLog, item_tail
+    assert item_tail("ISLAND OF ZOU\nNew Item <Crimson\nPolka Puffer>\nSTUDS") == "Crimson Polka Puffer"
+    assert item_tail("SAFE ZONE PROTECTED") is None
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    black = np.zeros((40, 200, 3), np.uint8)
+    c = log.add(black, lines=[{"text": "New Item <Gotden", "words": []}, {"text": "Ribbon>", "words": []}])
+    assert log.name_of(c) == "Golden Ribbon Angelfish"
+    u = log.add(black, text="New Item <Shark>")            # не разобрать: улов есть, рыба неизвестна
+    assert u.fish["name"] == fishdb.UNKNOWN_NAME and not u.new
+    assert log.add(black, text="New Item <Serk>") is u and u.count == 2
+    assert len([f for f in fishdb.all_fish() if f["name"] == fishdb.UNKNOWN_NAME]) == 1
+    assert log.add(black, text="SAFE ZONE PROTECTED") is None

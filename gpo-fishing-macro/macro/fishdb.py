@@ -169,22 +169,37 @@ def set_rarity(fish_id, rarity):
 
 # Названия рыб из игры (по-английски, как в уведомлении «New Item <…>»). OCR путает в них 1–2 буквы,
 # поэтому прочитанное название сравниваем с этим списком с погрешностью (fuzzy)
+# Все рыбы игры (по-английски, как в уведомлении «New Item <…>»). Прочитанное OCR название подбирается
+# только из этого списка: шрифт игры OCR читает с ошибками, а строку уведомления иногда режет на куски
 KNOWN_NAMES = [
     "Swordfish", "Dark Skeletal Shark", "Golden Ribbon Angelfish", "Golden Tigerfin", "Golden Polka Puffer",
     "Candy Corn Squid", "Jack-O'-Bite", "Skeletal Shark", "Fangfish", "Exotic Tigerfin", "Crimson Snapper",
-    "Zebra Ribbon Angelfish", "Crimson Polka Puffer", "Tigerfin", "Blue-Lip Grouper",
+    "Zebra Ribbon Angelfish", "Crimson Polka Puffer", "Tigerfin", "Blue-Lip Grouper", "Anglerfish",
 ]
+UNKNOWN_NAME = "Unknown Fish"   # «New Item» есть, а название не похоже ни на одну рыбу из списка
+# Цифры, которые OCR ставит вместо похожих букв
+_DIGITS = str.maketrans({"0": "o", "1": "l", "5": "s", "8": "b", "|": "l"})
+# «<» перед названием OCR читает как букву: «Czebra» = «<Zebra», «Cg0tden» = «<Golden»
+_BRACKET_LETTERS = "CcZzLlKk(<[{"
 
 
 def name_key(name):
     """Только буквы: «Jack-O’-Bite» и «Jack O Bite» — одно и то же."""
-    return re.sub(r"[^a-z]", "", (name or "").lower())
+    return re.sub(r"[^a-z]", "", (name or "").lower().translate(_DIGITS))
+
+
+def words_of(name):
+    return [w for w in (name_key(w) for w in re.split(r"[\s\-'’`]+", name or "")) if w]
 
 
 def tolerance(key):
-    """Сколько букв OCR может перепутать: 1 в коротких названиях, до 3 в длинных."""
-    n = len(key)
-    return 0 if n < 4 else 1 if n < 8 else 2 if n < 14 else 3
+    """Сколько букв OCR может перепутать в названии целиком: примерно каждую третью-четвёртую."""
+    return max(1, round(0.3 * len(key)))
+
+
+def word_tolerance(word):
+    n = len(word)
+    return 0 if n <= 3 else 1 if n <= 5 else 2
 
 
 def distance(a, b, limit=None):
@@ -200,39 +215,81 @@ def distance(a, b, limit=None):
     return prev[-1]
 
 
-def nearest(name, choices):
-    """Самое похожее из choices в пределах погрешности или None. Если два варианта одинаково
-    похожи, не угадываем."""
-    key = name_key(name)
-    if not key:
-        return None
-    tol = tolerance(key)
-    scored = sorted((distance(key, name_key(c), tol), i, c) for i, c in enumerate(choices) if name_key(c))
-    if not scored or scored[0][0] > tol:
-        return None
-    if len(scored) > 1 and scored[1][0] == scored[0][0] and name_key(scored[1][2]) != name_key(scored[0][2]):
-        return None
-    return scored[0][2]
+def _word_match(cand, name):
+    """Слова прочитанного по порядку совпадают со словами названия (с погрешностью), лишние слова
+    прочитанного пропускаются. Возвращает (сколько слов совпало, доля букв названия, пропущено)."""
+    nw = words_of(name)
+    j = matched = letters = skipped = 0
+    for w in cand:
+        for k in range(j, len(nw)):
+            if distance(w, nw[k], word_tolerance(nw[k])) <= word_tolerance(nw[k]):
+                matched += 1
+                letters += len(nw[k])
+                j = k + 1
+                break
+        else:
+            skipped += 1
+    return matched, letters / max(1, sum(len(w) for w in nw)), skipped
 
 
-def known_names(cfg=None, learned=True):
-    """Названия, к которым можно «притянуть» прочитанное: список игры, каталог и (learned=True)
-    выученные из уведомлений."""
-    out = list(KNOWN_NAMES)
-    for f in all_fish():
-        if learned or not f["id"].startswith("u"):
-            out.append(display_name(f, cfg))
-    if learned:
-        with _lock:
-            out += list(_load()["names"].values())
-    return out
+def match_name(raw, cfg=None):
+    """Рыба из списка по тексту после «New Item» или None.
+
+    1. Целиком: первые 1–6 слов прочитанного против каждого названия с погрешностью ~30% букв
+       («Ansterfish» → Anglerfish, «Zketevat Shark» → Skeletal Shark).
+    2. По словам, если строка обрезана: «Dark Shark» → Dark Skeletal Shark, «Candy Corn» → Candy Corn Squid,
+       «Cg0tden Doua Putter» → Golden Polka Puffer. Берём, только если подходит ровно одна рыба:
+       «Crimson» или «Shark» есть в двух названиях — такое не угадываем.
+    """
+    names = list(dict.fromkeys(KNOWN_NAMES + [display_name(f, cfg) for f in BUILTIN]))
+    tokens = [t for t in re.split(r"[\s>»›)\]}]+", str(raw or "")) if t][:6]
+    if not tokens:
+        return None
+    variants = [tokens]
+    if len(tokens[0]) > 2 and tokens[0][0] in _BRACKET_LETTERS:
+        variants.append([tokens[0][1:]] + tokens[1:])
+
+    # 1. Целиком. Другая рыба должна быть заметно дальше (на 2+ буквы), иначе не угадываем:
+    # «Ribbon Angelfish» одинаково похоже на Golden и Zebra Ribbon Angelfish
+    best = None
+    for toks in variants:
+        for k in range(1, len(toks) + 1):
+            key = name_key(" ".join(toks[:k]))
+            if len(key) < 4:
+                continue
+            dist = sorted((distance(key, name_key(n)), n) for n in names)
+            d, n = dist[0]
+            rival = next((dd for dd, nn in dist[1:] if name_key(nn) != name_key(n)), 99)
+            if d <= tolerance(name_key(n)) and rival - d >= 2:
+                score = d / len(name_key(n))
+                if best is None or score < best[0]:
+                    best = (score, n)
+    if best is not None:
+        return best[1]
+
+    # 2. По словам
+    found = {}
+    for toks in variants:
+        cand = words_of(" ".join(toks))
+        for n in names:
+            matched, cover, skipped = _word_match(cand, n)
+            # Одно слово засчитываем, только если оно длинное («Zebra», «Candy»), а не «Dark» или «O»
+            one_word = matched == 1 and cover >= 0.25 and max(map(len, cand), default=0) >= 5
+            if (matched >= 2 or one_word) and skipped <= 2:
+                found[name_key(n)] = max(found.get(name_key(n), (0, 0, None)), (matched, cover, n))
+    if not found:
+        return None
+    ranked = sorted(found.values(), reverse=True)
+    # Подходят несколько рыб: берём одну, только если у неё совпало больше слов
+    # («Gotden Ribbon»: у Golden Ribbon Angelfish два слова, у Golden Tigerfin одно)
+    if len(ranked) == 1 or ranked[0][0] > ranked[1][0]:
+        return ranked[0][2]
+    return None
 
 
 def canonical(name, cfg=None, learned=True):
-    """Правильное написание прочитанного названия («Crimson Polkaxpuffer» → «Crimson Polka Puffer»)
-    или None, если такой рыбы мы не знаем. learned=False — только список игры и рыбы со скринов
-    (выученные могли попасть в каталог по ошибке)."""
-    return nearest(name, known_names(cfg, learned))
+    """Правильное написание прочитанного названия или None, если такой рыбы в списке нет."""
+    return match_name(name, cfg)
 
 
 def find_by_name(name, cfg=None):
@@ -247,43 +304,46 @@ def find_by_name(name, cfg=None):
     for fid, n in names.items():
         if name_key(n) == key:
             return by_id(fid)
-    # С погрешностью: OCR перепутал букву-другую
-    choices = {display_name(f, cfg): f["id"] for f in all_fish()}
-    choices.update({n: fid for fid, n in names.items()})
-    best = nearest(name, list(choices))
-    return by_id(choices[best]) if best else None
+    # Без погрешности: название уже подобрано по списку (match_name), а Golden и Zebra Ribbon Angelfish
+    # различаются всего несколькими буквами
+    return None
 
 
-# Обрывки надписи «SAFE ZONE PROTECTED», которые версия 1.1.0 и раньше записывала как рыбу
-JUNK = re.compile(r"\b(saf|safe|zone|cted|protected|ow)\b", re.IGNORECASE)
+def unknown_fish():
+    """Запись «Unknown Fish»: улов с «New Item», название которого не похоже ни на одну рыбу."""
+    with _lock:
+        fish = next((f for f in _load()["fish"] if f["name"] == UNKNOWN_NAME), None)
+    return fish or add_fish(placeholder_icon(None), UNKNOWN_NAME)
 
 
 def tidy_learned(cfg=None):
-    """Привести выученных рыб к правильным названиям: опечатки OCR исправить, а рыбу, которая
-    уже есть в каталоге с иконкой, слить с ней. Возвращает [(старый id, новый id)] для журнала."""
+    """Привести выученных рыб к списку игры: опечатки OCR исправить, рыбу, которая уже есть
+    в каталоге с иконкой, слить с ней, а то, что не похоже ни на одну рыбу, удалить.
+    Возвращает [(старый id, новый id или None)] для журнала."""
     moved = []
     with _lock:
         names = _load()["names"]
         for fid, n in list(names.items()):
-            right = nearest(n, KNOWN_NAMES)
+            right = match_name(n, cfg)
             if right and right != n:
                 names[fid] = right
                 _save()
     for f in list(_load()["fish"]):
         name = learned_name(f["id"]) or f["name"]
-        right = nearest(name, KNOWN_NAMES)
-        if not right and JUNK.search(name):
-            remove_fish(f["id"])            # «SAFE ZONE PROTECTED», прочитанное старой версией
+        if name == UNKNOWN_NAME:
+            continue
+        right = match_name(name, cfg)
+        if not right:
+            remove_fish(f["id"])            # «Shark», «Serk», «Saf Zone Ot Cted» — мусор старых версий
             moved.append((f["id"], None))
             continue
-        if right and right != name:
+        if right != name:
             with _lock:
                 f["name"] = right
                 _load()["names"].pop(f["id"], None)
                 _save()
-            name = right
         twin = next((b for b in all_fish() if b["id"] != f["id"]
-                     and name_key(display_name(b, cfg)) == name_key(name)), None)
+                     and name_key(display_name(b, cfg)) == name_key(right)), None)
         if twin is not None and not twin["id"].startswith("u"):
             link_to_builtin(f["id"], twin["id"])
             moved.append((f["id"], twin["id"]))

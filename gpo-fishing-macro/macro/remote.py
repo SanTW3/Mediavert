@@ -13,9 +13,15 @@ import urllib.parse
 import urllib.request
 
 COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches"}
-STATUS_EVERY = 30.0     # даже без изменений — «я жив» раз в 30 с
-MIN_INTERVAL = 10.0     # не чаще раза в 10 с: у ntfy.sh лимит ~12 запросов в минуту, при превышении — HTTP 429
+# У бесплатного ntfy.sh лимит ~250 сообщений в сутки с одного IP. Раньше статус уходил каждые 10–30 с —
+# за час-полтора лимит кончался (HTTP 429), панель показывала «ПК не в сети», а заодно переставали
+# доходить тревоги ntfy. Теперь статус шлём, только когда панель открыта (она присылает «ping»),
+# и при важных событиях: старт/стоп, тревога, экран.
+WATCH_FOR = 90.0        # после «ping» панель считаем открытой столько секунд
+WATCH_INTERVAL = 15.0   # пока панель открыта — не чаще раза в 15 с
+MIN_INTERVAL = 10.0     # важные события — не чаще раза в 10 с
 COMMAND_MAX_AGE = 60    # команды старше минуты (пришли, пока ПК был выключен) игнорируем
+IMPORTANT = ("running", "alarm", "blackout", "fish_log")
 
 
 def topics(secret):
@@ -26,6 +32,10 @@ def webapp_link(cfg):
     """Ссылка на мини-приложение. Секрет и сервер — во фрагменте (#), он не уходит на GitHub."""
     base = str(cfg.get("webapp_url") or "").strip()
     frag = urllib.parse.urlencode({"t": cfg["remote_secret"], "s": cfg.get("ntfy_server") or "https://ntfy.sh"})
+    if base:
+        # Версия в адресе: Telegram кэширует страницу, а с новым адресом откроет свежую
+        from . import __version__
+        base += ("&" if "?" in base else "?") + "v=" + __version__
     return f"{base}#{frag}"
 
 
@@ -39,7 +49,11 @@ class Remote:
         self._kick = threading.Event()
         self._last_sent = None
         self._last_time = -MIN_INTERVAL
+        self._watch_until = 0.0
+        self._ping = False
         self._failing = False
+        self.last_ok = None       # time.time() последней удачной отправки статуса
+        self.last_error = None
         threading.Thread(target=self._publish_loop, daemon=True).start()
         threading.Thread(target=self._command_loop, daemon=True).start()
 
@@ -57,6 +71,16 @@ class Remote:
     def _enabled(self):
         return bool(self.cfg.get("remote_enabled") and self.cfg.get("remote_secret"))
 
+    def diagnostics(self):
+        """Строка для статуса в Telegram: дошёл ли статус до панели."""
+        if not self._enabled():
+            return "Панель: выключена"
+        if self._failing and self.last_error:
+            return f"Панель: статус не отправляется ({self.last_error})"
+        if self.last_ok:
+            return f"Панель: статус отправлен {int(time.time() - self.last_ok)} с назад"
+        return "Панель: ещё не открывали"
+
     # ---------- статус: ПК → телефон ----------
     def _publish_loop(self):
         while not self._stop.is_set():
@@ -71,10 +95,19 @@ class Remote:
             now = time.monotonic()
             # Время работы панель досчитывает сама — его изменение не повод слать статус
             key = {k: v for k, v in status.items() if k != "runtime"}
-            changed = key != self._last_sent
-            due = now - self._last_time >= STATUS_EVERY
-            if not (changed or due) or now - self._last_time < MIN_INTERVAL:
+            last = self._last_sent or {}
+            since = now - self._last_time
+            watching = now < self._watch_until
+            important = any(key.get(k) != last.get(k) for k in IMPORTANT) and since >= MIN_INTERVAL
+            if self._ping and since >= WATCH_INTERVAL:
+                due = True                      # панель только что открыли или она жива
+            elif watching and key != last and since >= WATCH_INTERVAL:
+                due = True
+            else:
+                due = important
+            if not due:
                 continue
+            self._ping = False
             body = dict(status, ts=int(time.time()))
             topic = topics(self.cfg["remote_secret"])[0]
             try:
@@ -84,13 +117,17 @@ class Remote:
                 urllib.request.urlopen(req, timeout=15).read()
                 self._last_sent = key
                 self._last_time = now
+                self.last_ok = time.time()
                 if self._failing:
                     self.log("Мини-приложение: статус снова отправляется")
                     self._failing = False
             except Exception as exc:
                 self._last_time = now  # нет сети — следующая попытка не раньше MIN_INTERVAL
+                self._last_sent = key  # не повторять то же событие в цикле
+                code = getattr(exc, "code", None)
+                self.last_error = ("лимит сообщений ntfy.sh на сегодня исчерпан" if code == 429 else str(exc))
                 if not self._failing:   # пишем один раз, а не каждые 10 секунд
-                    self.log(f"Мини-приложение: не удалось отправить статус в ntfy ({exc}) — "
+                    self.log(f"Мини-приложение: не удалось отправить статус в ntfy ({self.last_error}) — "
                              "на телефоне будет «ПК не в сети»")
                     self._failing = True
 
@@ -123,6 +160,12 @@ class Remote:
         if time.time() - float(msg.get("time", 0)) > COMMAND_MAX_AGE:
             return
         cmd = str(msg.get("message", "")).strip()
+        if cmd == "ping":
+            # Панель открыта: прислать ей свежий статус и держать его свежим, пока она пингует
+            self._watch_until = time.monotonic() + WATCH_FOR
+            self._ping = True
+            self._kick.set()
+            return
         if cmd in COMMANDS:
             self.log(f"Мини-приложение: {cmd}")
             self.on_command(cmd)

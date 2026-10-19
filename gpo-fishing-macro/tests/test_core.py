@@ -350,7 +350,65 @@ def test_remote_publishes_status_and_takes_commands():
     assert posted[0][1]["catches"] == 3 and posted[0][1]["running"] is True and "ts" in posted[0][1]
     assert got == ["screen_on"]
     link = remote.webapp_link(dict(cfg, webapp_url="https://santw3.github.io/gpo-macro/"))
-    assert link.startswith("https://santw3.github.io/gpo-macro/#t=S3CRET&s=http")
+    from macro import __version__
+    assert link.startswith(f"https://santw3.github.io/gpo-macro/?v={__version__}#t=S3CRET&s=http")
+
+
+def test_remote_saves_ntfy_quota(monkeypatch):
+    """Без открытой панели статус уходит только при важных событиях (лимит ntfy.sh ~250 в сутки)."""
+    from macro import remote
+    monkeypatch.setattr(remote, "MIN_INTERVAL", 0.1)
+    monkeypatch.setattr(remote, "WATCH_INTERVAL", 0.1)
+    posted = []
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            posted.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(200)
+            self.end_headers()
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            time.sleep(5)
+
+        def log_message(self, *a):
+            pass
+
+    from http.server import ThreadingHTTPServer
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    state = {"running": True, "catches": 0}
+    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S")
+    r = remote.Remote(cfg, lambda: dict(state), lambda c: None, log=lambda t: None)
+
+    def settle(n):
+        deadline = time.time() + 3
+        while len(posted) < n and time.time() < deadline:
+            r.poke()
+            time.sleep(0.05)
+        time.sleep(0.3)
+
+    try:
+        settle(1)
+        assert len(posted) == 1                # первый статус после запуска
+        state["catches"] = 5
+        settle(1)
+        assert len(posted) == 1                # улов без открытой панели не шлём
+        r._handle_line(json.dumps({"event": "message", "time": time.time(), "message": "ping"}))
+        settle(2)
+        assert len(posted) == 2 and posted[-1]["catches"] == 5
+        state["catches"] = 6                   # панель открыта — изменения уходят
+        settle(3)
+        assert len(posted) == 3
+        state["running"] = False
+        r._watch_until = 0
+        settle(4)
+        assert len(posted) == 4 and posted[-1]["running"] is False   # стоп — важное событие
+        assert "отправлен" in r.diagnostics()
+    finally:
+        r.stop()
+        srv.shutdown()
 
 
 def test_clean_name():
@@ -581,12 +639,18 @@ def test_windows_ocr_reads_game_notification():
 
 
 def test_parse_name_drops_stray_letters():
-    from macro.catches import best_name, parse_name
+    from macro.catches import best_name, parse_name, weak_names
     assert parse_name("New Item <Crimson Polka x Puffer>") == "Crimson Polka Puffer"
     assert parse_name("Nev ltem <Fangfish>") == "Fangfish"
     # Так Windows OCR читал скрин из игры в разных вариантах подготовки картинки
     assert parse_name("Item <Crimson polkaxpuffer>") == "Crimson Polkaxpuffer"
-    assert parse_name("'Crimson polka puffer-\ufffd") == "Crimson Polka Puffer"
-    assert best_name(["Crimson Polkaxpuffer", "Crimson Polka Puffer"]) == "Crimson Polka Puffer"
-    for junk in ("ISLAND OF ZOU", "STUDS", "- ONE", "t-QOTVCTED", "ECT D", "It's a nice day"):
+    assert parse_name("NC\ufffdAtem <Crimson polka puffer>") == "Crimson Polka Puffer"
+    # Без «Item» строка не засчитывается, но помогает поправить пробелы в названии
+    assert parse_name("'Crimson polka puffer-\ufffd") is None
+    assert weak_names("'Crimson polka puffer-\ufffd") == ["Crimson Polka Puffer"]
+    assert best_name(["Crimson Polkaxpuffer"], weak=["Crimson Polka Puffer"]) == "Crimson Polka Puffer"
+    assert best_name(["Crimson Polkaxpuffer"], weak=["Saf Zone Ot Cted"]) == "Crimson Polkaxpuffer"
+    for junk in ("ISLAND OF ZOU", "STUDS", "- ONE", "t-QOTVCTED", "ECT D", "It's a nice day",
+                 "'Saf Zone Ot Cted", "'SAF OW OT CTED", "(Ot Cted)", "<Safe Zone Protected>",
+                 "SAFE ZONE PROTECTED", "System item", "Items"):
         assert parse_name(junk) is None

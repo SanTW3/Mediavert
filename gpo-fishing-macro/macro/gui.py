@@ -786,6 +786,17 @@ class App:
                                   command=link, width=150, fg_color=FIELD, button_color=CARD_BORDER,
                                   button_hover_color=ACCENT, dynamic_resizing=False,
                                   font=(self.display, 12, "bold")).pack(side="left", padx=(6, 0))
+
+                def remove(fid=fish["id"], title=fishdb.display_name(fish, self.cfg)):
+                    fishdb.remove_fish(fid)
+                    names.pop(fid, None)
+                    self.catch_log.forget(fid)
+                    self._schedule_save()
+                    self.log(f"Удалено из каталога: {title}")
+                    self.remote.poke()
+                    self.root.after(10, self._fill_catalog)
+                ctk.CTkButton(left, text="✕", width=30, command=remove, fg_color=FIELD, hover_color=RED,
+                              font=(self.display, 12, "bold")).pack(side="left", padx=(6, 0))
             else:
                 color = info["color"]
                 lbl = tk.Label(left, text=italic_pad(info["title"].upper()), font=(self.display, 10, "bold", "italic"),
@@ -979,7 +990,7 @@ class App:
                 self.tg.send_photo(png, status_text(self.engine, self.blackout.active))
             threading.Thread(target=job, daemon=True).start()
         elif cmd in ("status", "menu"):
-            self.tg.send(status_text(self.engine, self.blackout.active))
+            self.tg.send(status_text(self.engine, self.blackout.active) + "\n" + self.remote.diagnostics())
 
     def log(self, text):
         self.log_box.configure(state="normal")

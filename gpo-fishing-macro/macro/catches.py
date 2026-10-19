@@ -43,25 +43,56 @@ def clean_name(text):
     return name.title() if name else ""
 
 
-# «New Item <Fangfish>»: название в угловых скобках. OCR иногда путает скобки — берём похожие
-# OCR путает скобки с кавычками, а закрывающую иногда теряет в конце строки
-BRACKETED = re.compile(r"(?<![A-Za-z])[<«‹(\[{'\"‘“`]\s*([A-Za-z][A-Za-z0-9 \-]{1,40}?)\s*(?:[>»›)\]}'\"’”]|[-~_.]*\W*$)")
-# Шрифт игры OCR читает как «Nev ltem» — допускаем такие ошибки
-NEW_ITEM = re.compile(r"ne[wv]{1,2}\s*[il1|!]\s*tem\s*[:\-]?\s*[<«‹(\[{]?\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*"
-                      r"(?:[>»›)\]}]|$)", re.IGNORECASE)
+# «New Item <Fangfish>»: засчитываем только строку со словом «Item» — так игра сообщает о новом предмете.
+# Шрифт игры OCR читает как «Nev ltem», а скобки путает с кавычками — допускаем такие ошибки
+ITEM = re.compile(r"(?<![A-Za-z])(?:ne[wv]{1,2}\s*)?[il1|!a]\s*tem(?![A-Za-z])\s*[:\-]?\s*(.*)", re.IGNORECASE)
+NAME_AFTER_ITEM = re.compile(r"^[<«‹(\[{'\"‘“`\s]*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*(?:[>»›)\]}'\"’”]|$)")
+# Название в скобках без «Item» рядом. Само по себе не засчитывается («SAFE ZONE PROTECTED»
+# OCR читает как «'Saf Zone Ot Cted»), но помогает поправить пробелы в названии из строки с «Item»
+BRACKETED = re.compile(r"(?<![A-Za-z])[<«‹(\[{'\"‘“`]\s*([A-Za-z][A-Za-z0-9 \-]{1,40}?)\s*"
+                       r"(?:[>»›)\]}'\"’”]|[-~_.]*\W*$)")
+
+
+def _tidy(raw):
+    # Одиночные буквы — мусор от столбов и бликов рядом с текстом («Crimson Polka x Puffer»)
+    words = [w for w in raw.split() if len(w) > 1]
+    name = " ".join(words).strip(" -'")
+    if len(re.sub(r"[^A-Za-z]", "", name)) < 3:
+        return None
+    return string.capwords(name)   # в игре названия с заглавных: «Crimson Polka Puffer»
 
 
 def parse_name(text):
-    """Название рыбы из текста уведомления или None, если это не уведомление о предмете."""
+    """Название рыбы из строки «New Item <…>» или None, если это не уведомление о предмете."""
     for line in (text or "").splitlines():
-        m = BRACKETED.search(line) or NEW_ITEM.search(line)
-        if m:
-            # Одиночные буквы — мусор от столбов и бликов рядом с текстом («Crimson Polka x Puffer»)
-            words = [w for w in m.group(1).split() if len(w) > 1]
-            name = " ".join(words).strip(" -'")
-            if len(name) >= 3:
-                return string.capwords(name)   # в игре названия с заглавных: «Crimson Polka Puffer»
+        m = ITEM.search(line)
+        if not m:
+            continue
+        n = NAME_AFTER_ITEM.search(m.group(1))
+        name = _tidy(n.group(1)) if n else None
+        if name:
+            return name
     return None
+
+
+def weak_names(text):
+    """Названия в угловых скобках без «Item» — только для исправления пробелов, не для записи."""
+    out = []
+    for line in (text or "").splitlines():
+        for m in BRACKETED.finditer(line):
+            name = _tidy(m.group(1))
+            if name:
+                out.append(name)
+    return out
+
+
+def _letters(n):
+    return re.sub(r"[^a-z]", "", n.lower())
+
+
+def _is_subsequence(short, long):
+    it = iter(long)
+    return all(ch in it for ch in short)
 
 
 def _dist_to_dark(dark, axis, reverse):
@@ -189,20 +220,27 @@ def text_rarity(rgb, rect=None):
     return None
 
 
-def best_name(names, cfg=None):
+def best_name(names, cfg=None, weak=()):
     """Лучшее из прочитанных названий: известное каталогу → чаще встречается → больше слов
-    (ошибка «polkaxpuffer» склеивает слова) → длиннее."""
+    (ошибка «polkaxpuffer» склеивает слова) → длиннее. weak — названия без «Item»: если такое же
+    название, только без 1–2 лишних букв и с правильными пробелами, берём его написание."""
     if not names:
         return None
-    key = lambda n: re.sub(r"[^a-z]", "", n.lower())
     counts = {}
     for n in names:
-        counts[key(n)] = counts.get(key(n), 0) + 1
+        counts[_letters(n)] = counts.get(_letters(n), 0) + 1
 
     def score(n):
         known = fishdb.find_by_name(n, cfg) is not None
-        return (known, counts[key(n)], len(n.split()), len(n))
-    return max(names, key=score)
+        return (known, counts[_letters(n)], len(n.split()), len(n))
+    best = max(names, key=score)
+    if fishdb.find_by_name(best, cfg) is None:
+        for w in sorted(weak, key=lambda w: (-len(w.split()), -len(w))):
+            kb, kw = _letters(best), _letters(w)
+            if (len(w.split()) > len(best.split()) and 0 <= len(kb) - len(kw) <= 2
+                    and len(kw) >= 3 and _is_subsequence(kw, kb)):
+                return w
+    return best
 
 
 def notice_rarity(rgb):
@@ -331,14 +369,16 @@ class CatchLog:
         """Прочитать уведомление: все варианты снимка (ocr_variants) дают кандидатов,
         лучший выбирается голосованием — шрифт игры OCR читает с разными ошибками."""
         a = np.ascontiguousarray(np.asarray(rgb)[:, :, :3])
-        names = []
+        names, weak = [], []
         for img in ocr_variants(a):
             lines = ocr.read_lines(img)
             self._remember(lines)
-            name = parse_name("\n".join(line["text"] for line in lines))
+            text = "\n".join(line["text"] for line in lines)
+            name = parse_name(text)
             if name:
                 names.append(name)
-        name = best_name(names, self.cfg)
+            weak += weak_names(text)
+        name = best_name(names, self.cfg, weak)
         return (name, notice_rarity(a)) if name else None
 
     def add_frames(self, frames):
@@ -361,6 +401,11 @@ class CatchLog:
             else:
                 target.count += old.count
                 self.items.remove(old)
+
+    def forget(self, fish_id):
+        """Рыбу удалили из каталога — убираем её и из журнала."""
+        with self._lock:
+            self.items = [c for c in self.items if c.fish_id != fish_id]
 
     def _sorted(self):
         with self._lock:

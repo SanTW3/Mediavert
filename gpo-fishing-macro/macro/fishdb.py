@@ -201,6 +201,26 @@ def add_fish(icon_rgba, name=None, rarity=None):
         return fish
 
 
+def remove_fish(fish_id):
+    """Удалить выученную рыбу (например, мусор, прочитанный не из уведомления о рыбе)."""
+    global _features
+    with _lock:
+        data = _load()
+        fish = next((f for f in data["fish"] if f["id"] == fish_id), None)
+        if fish is None:
+            return False
+        data["fish"].remove(fish)
+        data["names"].pop(fish_id, None)
+        _save()
+        _icons.pop(fish_id, None)
+        _features = None
+        try:
+            os.remove(icon_path(fish_id))
+        except OSError:
+            pass
+        return True
+
+
 def link_to_builtin(fish_id, builtin_id):
     """Выученная рыба — это рыба со скрина: её название переходит к иконке из каталога."""
     global _features

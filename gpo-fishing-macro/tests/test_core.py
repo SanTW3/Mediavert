@@ -571,7 +571,8 @@ def test_windows_ocr_reads_game_notification():
     rgb = np.asarray(Image.open(os.path.join(os.path.dirname(__file__), "catch_area_crimson.png")).convert("RGB"))
     for i, img in enumerate(ocr_variants(rgb)):
         lines = ocr.read_lines(img, raise_errors=True)
-        print(f"OCR variant {i}:", [ln["text"] for ln in lines], "->", parse_name("\n".join(ln["text"] for ln in lines)))
+        print(f"OCR variant {i} {img.shape[1]}x{img.shape[0]}:", [ln["text"] for ln in lines], "->",
+              parse_name("\n".join(ln["text"] for ln in lines)))
     log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
     c = log.add_frames([rgb])
     assert c is not None, log.last_texts

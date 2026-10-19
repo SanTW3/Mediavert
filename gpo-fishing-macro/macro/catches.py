@@ -87,14 +87,51 @@ def text_mask(rgb, stroke=5):
     return np.dstack([out, out, out])
 
 
+def fill_mask(rgb, near=4):
+    """Заливка букв: яркие пиксели рядом с тёмной обводкой → чёрный текст на белом.
+    Белое «New Item» и цветное название остаются, вода и небо (без обводки) пропадают."""
+    img = np.asarray(rgb)[:, :, :3].astype(np.int16)
+    mx = img.max(axis=2)
+    dark = mx < 70
+    close = dark.copy()
+    for dy in range(-near, near + 1):
+        for dx in range(-near, near + 1):
+            close |= np.roll(np.roll(dark, dy, axis=0), dx, axis=1)
+    fill = close & (mx > 215)
+    out = np.full(mx.shape, 255, np.uint8)
+    out[fill] = 0
+    return np.dstack([out, out, out])
+
+
+def text_bands(rgb, pad=6, min_h=8):
+    """Полосы строк текста (y0, y1) — там, где много заливки букв."""
+    m = fill_mask(rgb)[:, :, 0] == 0
+    rows = m.sum(axis=1) > max(4, m.shape[1] * 0.004)
+    bands, start = [], None
+    for y, on in enumerate(list(rows) + [False]):
+        if on and start is None:
+            start = y
+        elif not on and start is not None:
+            if y - start >= min_h:
+                bands.append((max(start - pad, 0), min(y + pad, m.shape[0])))
+            start = None
+    return bands
+
+
+def _scale(a, k):
+    return np.asarray(Image.fromarray(a).resize((a.shape[1] * k, a.shape[0] * k), Image.LANCZOS))
+
+
 def ocr_variants(rgb):
-    """Снимок для OCR в нескольких видах: как есть, крупнее, маска текста (крупнее)."""
+    """Снимок для OCR в нескольких видах — шрифт игры (обводка, цветные буквы над водой)
+    Windows OCR читает плохо, поэтому пробуем по очереди."""
     a = np.ascontiguousarray(np.asarray(rgb)[:, :, :3])
     yield a
-    big = np.asarray(Image.fromarray(a).resize((a.shape[1] * 2, a.shape[0] * 2), Image.LANCZOS))
-    yield big
-    mask = Image.fromarray(text_mask(a)).resize((a.shape[1] * 2, a.shape[0] * 2), Image.LANCZOS)
-    yield np.asarray(mask)
+    for y0, y1 in text_bands(a):          # каждая строка отдельно, крупно, маской заливки
+        line = a[y0:y1]
+        yield _scale(fill_mask(line), 3)
+        yield _scale(line, 3)
+    yield _scale(fill_mask(a), 2)
 
 
 def text_rarity(rgb, rect=None):
@@ -146,6 +183,19 @@ def text_rarity(rgb, rect=None):
     if 245 <= main <= 320:
         return "epic"
     return None
+
+
+def notice_rarity(rgb):
+    """Редкость по цвету строки «New Item <…>», когда рамок слов нет: самая «цветная» строка текста."""
+    best, best_n = None, 0
+    for y0, y1 in text_bands(rgb):
+        band = np.asarray(rgb)[y0:y1]
+        r = text_rarity(band)
+        mask = fill_mask(band)[:, :, 0] == 0
+        n = int(mask.sum())
+        if r and r != "common" and n > best_n:
+            best, best_n = r, n
+    return best or "common"
 
 
 def read_notice(rgb, lines):
@@ -259,16 +309,19 @@ class CatchLog:
 
     def read_any(self, rgb):
         """Прочитать уведомление, перебирая варианты снимка (см. ocr_variants)."""
-        for i, img in enumerate(ocr_variants(rgb)):
+        a = np.ascontiguousarray(np.asarray(rgb)[:, :, :3])
+        for i, img in enumerate(ocr_variants(a)):
             lines = ocr.read_lines(img)
             self._remember(lines)
-            if i:   # рамки слов — в координатах увеличенной картинки, цвет меряем по ней же
-                notice = read_notice(img if i == 1 else np.asarray(Image.fromarray(
-                    np.ascontiguousarray(np.asarray(rgb)[:, :, :3])).resize((img.shape[1], img.shape[0]))), lines)
-            else:
-                notice = read_notice(rgb, lines)
-            if notice:
-                return notice
+            text = "\n".join(line["text"] for line in lines)
+            name = parse_name(text)
+            if not name:
+                continue
+            if i == 0:
+                return read_notice(a, lines)
+            # В остальных вариантах рамки слов не в координатах снимка — редкость меряем
+            # по цвету самой яркой цветной строки снимка (название рыбы — единственное цветное)
+            return name, notice_rarity(a)
         return None
 
     def add_frames(self, frames):

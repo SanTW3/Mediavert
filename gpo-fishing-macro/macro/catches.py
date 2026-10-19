@@ -221,7 +221,7 @@ def text_rarity(rgb, rect=None):
 
 
 def best_name(names, cfg=None, weak=()):
-    """Лучшее из прочитанных названий: известное каталогу → чаще встречается → больше слов
+    """Лучшее из прочитанных названий (известное — в правильном написании): известное каталогу → чаще встречается → больше слов
     (ошибка «polkaxpuffer» склеивает слова) → длиннее. weak — названия без «Item»: если такое же
     название, только без 1–2 лишних букв и с правильными пробелами, берём его написание."""
     if not names:
@@ -234,12 +234,14 @@ def best_name(names, cfg=None, weak=()):
         known = fishdb.find_by_name(n, cfg) is not None
         return (known, counts[_letters(n)], len(n.split()), len(n))
     best = max(names, key=score)
-    if fishdb.find_by_name(best, cfg) is None:
-        for w in sorted(weak, key=lambda w: (-len(w.split()), -len(w))):
-            kb, kw = _letters(best), _letters(w)
-            if (len(w.split()) > len(best.split()) and 0 <= len(kb) - len(kw) <= 2
-                    and len(kw) >= 3 and _is_subsequence(kw, kb)):
-                return w
+    right = fishdb.canonical(best, cfg)
+    if right:
+        return right
+    for w in sorted(weak, key=lambda w: (-len(w.split()), -len(w))):
+        kb, kw = _letters(best), _letters(w)
+        if (len(w.split()) > len(best.split()) and 0 <= len(kb) - len(kw) <= 2
+                and len(kw) >= 3 and _is_subsequence(kw, kb)):
+            return w
     return best
 
 
@@ -256,10 +258,20 @@ def notice_rarity(rgb):
     return best or "common"
 
 
-def read_notice(rgb, lines):
+def known_name(raw, cfg=None, strict=True):
+    """Название с правильным написанием. strict=False — строка без «Item»: её берём, только если
+    это известная рыба (с погрешностью в 1–3 буквы), иначе None."""
+    right = fishdb.canonical(raw, cfg, learned=strict) if raw else None
+    return right or (raw if strict else None)
+
+
+def read_notice(rgb, lines, cfg=None):
     """(название, редкость) из уведомления «New Item <…>» или None."""
     for line in lines:
         name = parse_name(line["text"])
+        if not name:
+            # «Item» OCR потерял, но в скобках название известной рыбы — тоже засчитываем
+            name = next((w for w in weak_names(line["text"]) if known_name(w, cfg, strict=False)), None)
         if not name:
             continue
         # Рамка слов, из которых состоит название, — по ним меряем цвет
@@ -273,7 +285,7 @@ def read_notice(rgb, lines):
             x1 = max(r[0] + r[2] for r in rects)
             y1 = max(r[1] + r[3] for r in rects)
             rect = (x0, y0, x1 - x0, y1 - y0)
-        return name, (text_rarity(rgb, rect) if rect else None)
+        return known_name(name, cfg), (text_rarity(rgb, rect) if rect else None)
     return None
 
 
@@ -336,7 +348,7 @@ class CatchLog:
         if lines is not None or text is not None:
             if lines is None:
                 lines = [{"text": text, "words": []}]
-            notice = read_notice(rgb, lines)
+            notice = read_notice(rgb, lines, self.cfg)
             self._remember(lines)
         else:
             notice = self.read_any(rgb)
@@ -376,8 +388,13 @@ class CatchLog:
             text = "\n".join(line["text"] for line in lines)
             name = parse_name(text)
             if name:
-                names.append(name)
-            weak += weak_names(text)
+                names.append(known_name(name, self.cfg))
+            for w in weak_names(text):
+                right = known_name(w, self.cfg, strict=False)
+                if right:
+                    names.append(right)     # известная рыба, хоть «Item» и не прочитан
+                else:
+                    weak.append(w)
         name = best_name(names, self.cfg, weak)
         return (name, notice_rarity(a)) if name else None
 
@@ -401,6 +418,14 @@ class CatchLog:
             else:
                 target.count += old.count
                 self.items.remove(old)
+
+    def apply_moves(self, moves):
+        """Каталог привёл рыб в порядок (fishdb.tidy_learned): переносим или убираем их улов."""
+        for old, new in moves:
+            if new:
+                self.remap(old, new)
+            else:
+                self.forget(old)
 
     def forget(self, fish_id):
         """Рыбу удалили из каталога — убираем её и из журнала."""

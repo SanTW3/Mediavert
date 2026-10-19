@@ -11,6 +11,7 @@
 от размера иконки и фона вокруг неё.
 """
 import json
+import re
 import os
 import sys
 import threading
@@ -29,18 +30,18 @@ NEW_RARITY = {"title": "Новая", "color": "#ffd65a"}
 # Встроенные рыбы. Названий в инвентаре игры нет — это запасные имена по виду,
 # пока игра не покажет настоящее в уведомлении о поимке. price — цена продажи одной рыбы (Peli)
 BUILTIN = [
-    {"id": "00", "name": "Fire Tail", "rarity": "rare", "price": 1004},
-    {"id": "01", "name": "Toadstool Fish", "rarity": "rare", "price": 1057},
-    {"id": "02", "name": "Blue Perch", "rarity": "common", "price": 162},
-    {"id": "03", "name": "Candy Fish", "rarity": "common", "price": 38},
-    {"id": "04", "name": "Spotted Caramel", "rarity": "legendary", "price": 11941},
-    {"id": "05", "name": "Tiger Caramel", "rarity": "legendary", "price": 12840},
-    {"id": "06", "name": "Pumpkin Angler", "rarity": "legendary", "price": 10583},
-    {"id": "07", "name": "Ghost Shark", "rarity": "epic", "price": 14913},
-    {"id": "08", "name": "Black Perch", "rarity": "rare", "price": 2703},
-    {"id": "09", "name": "Fire Squid", "rarity": "rare", "price": 12318},
-    {"id": "10", "name": "Tiger Fish", "rarity": "rare", "price": 2000},
-    {"id": "11", "name": "Zebra Sickle", "rarity": "rare", "price": 2328},
+    {"id": "00", "name": "Crimson Snapper", "rarity": "rare", "price": 1004},
+    {"id": "01", "name": "Crimson Polka Puffer", "rarity": "rare", "price": 1057},
+    {"id": "02", "name": "Blue-Lip Grouper", "rarity": "common", "price": 162},
+    {"id": "03", "name": "Exotic Tigerfin", "rarity": "common", "price": 38},
+    {"id": "04", "name": "Golden Polka Puffer", "rarity": "legendary", "price": 11941},
+    {"id": "05", "name": "Golden Tigerfin", "rarity": "legendary", "price": 12840},
+    {"id": "06", "name": "Jack-O'-Bite", "rarity": "legendary", "price": 10583},
+    {"id": "07", "name": "Skeletal Shark", "rarity": "epic", "price": 14913},
+    {"id": "08", "name": "Dark Skeletal Shark", "rarity": "rare", "price": 2703},
+    {"id": "09", "name": "Candy Corn Squid", "rarity": "rare", "price": 12318},
+    {"id": "10", "name": "Tigerfin", "rarity": "rare", "price": 2000},
+    {"id": "11", "name": "Zebra Ribbon Angelfish", "rarity": "rare", "price": 2328},
 ]
 FISH = BUILTIN  # совместимость
 RARITY_ORDER = {"legendary": 0, "epic": 1, "rare": 2, "common": 3, None: 4}
@@ -166,19 +167,130 @@ def set_rarity(fish_id, rarity):
                 return
 
 
+# Названия рыб из игры (по-английски, как в уведомлении «New Item <…>»). OCR путает в них 1–2 буквы,
+# поэтому прочитанное название сравниваем с этим списком с погрешностью (fuzzy)
+KNOWN_NAMES = [
+    "Swordfish", "Dark Skeletal Shark", "Golden Ribbon Angelfish", "Golden Tigerfin", "Golden Polka Puffer",
+    "Candy Corn Squid", "Jack-O'-Bite", "Skeletal Shark", "Fangfish", "Exotic Tigerfin", "Crimson Snapper",
+    "Zebra Ribbon Angelfish", "Crimson Polka Puffer", "Tigerfin", "Blue-Lip Grouper",
+]
+
+
+def name_key(name):
+    """Только буквы: «Jack-O’-Bite» и «Jack O Bite» — одно и то же."""
+    return re.sub(r"[^a-z]", "", (name or "").lower())
+
+
+def tolerance(key):
+    """Сколько букв OCR может перепутать: 1 в коротких названиях, до 3 в длинных."""
+    n = len(key)
+    return 0 if n < 4 else 1 if n < 8 else 2 if n < 14 else 3
+
+
+def distance(a, b, limit=None):
+    """Расстояние Левенштейна (замена, лишняя или потерянная буква = 1)."""
+    if abs(len(a) - len(b)) > (limit if limit is not None else len(a) + len(b)):
+        return 99
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def nearest(name, choices):
+    """Самое похожее из choices в пределах погрешности или None. Если два варианта одинаково
+    похожи, не угадываем."""
+    key = name_key(name)
+    if not key:
+        return None
+    tol = tolerance(key)
+    scored = sorted((distance(key, name_key(c), tol), i, c) for i, c in enumerate(choices) if name_key(c))
+    if not scored or scored[0][0] > tol:
+        return None
+    if len(scored) > 1 and scored[1][0] == scored[0][0] and name_key(scored[1][2]) != name_key(scored[0][2]):
+        return None
+    return scored[0][2]
+
+
+def known_names(cfg=None, learned=True):
+    """Названия, к которым можно «притянуть» прочитанное: список игры, каталог и (learned=True)
+    выученные из уведомлений."""
+    out = list(KNOWN_NAMES)
+    for f in all_fish():
+        if learned or not f["id"].startswith("u"):
+            out.append(display_name(f, cfg))
+    if learned:
+        with _lock:
+            out += list(_load()["names"].values())
+    return out
+
+
+def canonical(name, cfg=None, learned=True):
+    """Правильное написание прочитанного названия («Crimson Polkaxpuffer» → «Crimson Polka Puffer»)
+    или None, если такой рыбы мы не знаем. learned=False — только список игры и рыбы со скринов
+    (выученные могли попасть в каталог по ошибке)."""
+    return nearest(name, known_names(cfg, learned))
+
+
 def find_by_name(name, cfg=None):
     if not name:
         return None
-    key = name.strip().lower()
+    key = name_key(name)
     for f in all_fish():
-        if display_name(f, cfg).strip().lower() == key:
+        if name_key(display_name(f, cfg)) == key:
             return f
     with _lock:
-        names = _load()["names"]
+        names = dict(_load()["names"])
     for fid, n in names.items():
-        if n.strip().lower() == key:
+        if name_key(n) == key:
             return by_id(fid)
-    return None
+    # С погрешностью: OCR перепутал букву-другую
+    choices = {display_name(f, cfg): f["id"] for f in all_fish()}
+    choices.update({n: fid for fid, n in names.items()})
+    best = nearest(name, list(choices))
+    return by_id(choices[best]) if best else None
+
+
+# Обрывки надписи «SAFE ZONE PROTECTED», которые версия 1.1.0 и раньше записывала как рыбу
+JUNK = re.compile(r"\b(saf|safe|zone|cted|protected|ow)\b", re.IGNORECASE)
+
+
+def tidy_learned(cfg=None):
+    """Привести выученных рыб к правильным названиям: опечатки OCR исправить, а рыбу, которая
+    уже есть в каталоге с иконкой, слить с ней. Возвращает [(старый id, новый id)] для журнала."""
+    moved = []
+    with _lock:
+        names = _load()["names"]
+        for fid, n in list(names.items()):
+            right = nearest(n, KNOWN_NAMES)
+            if right and right != n:
+                names[fid] = right
+                _save()
+    for f in list(_load()["fish"]):
+        name = learned_name(f["id"]) or f["name"]
+        right = nearest(name, KNOWN_NAMES)
+        if not right and JUNK.search(name):
+            remove_fish(f["id"])            # «SAFE ZONE PROTECTED», прочитанное старой версией
+            moved.append((f["id"], None))
+            continue
+        if right and right != name:
+            with _lock:
+                f["name"] = right
+                _load()["names"].pop(f["id"], None)
+                _save()
+            name = right
+        twin = next((b for b in all_fish() if b["id"] != f["id"]
+                     and name_key(display_name(b, cfg)) == name_key(name)), None)
+        if twin is not None and not twin["id"].startswith("u"):
+            link_to_builtin(f["id"], twin["id"])
+            moved.append((f["id"], twin["id"]))
+        elif twin is not None and twin["id"] < f["id"]:
+            remove_fish(f["id"])            # та же рыба записана дважды
+            moved.append((f["id"], twin["id"]))
+    return moved
 
 
 def add_fish(icon_rgba, name=None, rarity=None):

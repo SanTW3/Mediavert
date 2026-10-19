@@ -468,14 +468,14 @@ def test_catch_log_uses_catalog_and_renders():
     rgb, lines = _notice("My Legend")
     log.add(rgb, lines=lines)
     log.add(rgb, text="New Item <My Legend>")
-    log.add(rgb, text="New Item <Ghost Shark>")
+    log.add(rgb, text="New Item <Skeletal Shark>")
     by = {log.name_of(c): c for c in log.items}
     assert by["My Legend"].count == 2 and by["My Legend"].rarity == "legendary" and by["My Legend"].fish_id == "04"
-    assert by["Ghost Shark"].rarity == "epic"
+    assert by["Skeletal Shark"].rarity == "epic"
     assert log.summary_text().splitlines()[2].startswith("🌈 My Legend × 2")   # легендарные — первыми
     data, kind = log.render()
     assert kind == "gif" and data[:3] == b"GIF"                              # радуга переливается
-    data, kind = log.render(rows=[by["Ghost Shark"]])
+    data, kind = log.render(rows=[by["Skeletal Shark"]])
     assert kind == "png" and data[:4] == b"\x89PNG"
     assert log.status()[0]["rarity"] == "legendary" and log.status()[0]["id"] == "04"
 
@@ -648,9 +648,52 @@ def test_parse_name_drops_stray_letters():
     # Без «Item» строка не засчитывается, но помогает поправить пробелы в названии
     assert parse_name("'Crimson polka puffer-\ufffd") is None
     assert weak_names("'Crimson polka puffer-\ufffd") == ["Crimson Polka Puffer"]
-    assert best_name(["Crimson Polkaxpuffer"], weak=["Crimson Polka Puffer"]) == "Crimson Polka Puffer"
-    assert best_name(["Crimson Polkaxpuffer"], weak=["Saf Zone Ot Cted"]) == "Crimson Polkaxpuffer"
+    assert best_name(["Moon Eelxfish"], weak=["Moon Eel Fish"]) == "Moon Eel Fish"
+    assert best_name(["Moon Eelxfish"], weak=["Saf Zone Ot Cted"]) == "Moon Eelxfish"
+    assert best_name(["Crimson Polkaxpuffer", "Ccrimson"]) == "Crimson Polka Puffer"   # известная рыба
     for junk in ("ISLAND OF ZOU", "STUDS", "- ONE", "t-QOTVCTED", "ECT D", "It's a nice day",
                  "'Saf Zone Ot Cted", "'SAF OW OT CTED", "(Ot Cted)", "<Safe Zone Protected>",
                  "SAFE ZONE PROTECTED", "System item", "Items"):
         assert parse_name(junk) is None
+
+
+def test_fish_names_with_ocr_typos():
+    """OCR путает 1–2 буквы — название притягивается к известной рыбе из игры."""
+    from macro import fishdb
+    from macro.catches import CatchLog, parse_name, read_notice
+    cfg = dict(config.DEFAULTS)
+    for typo, right in (("Crimson Polkaxpuffer", "Crimson Polka Puffer"), ("Fangflsh", "Fangfish"),
+                        ("Jack O Blte", "Jack-O'-Bite"), ("Blue Llp Grouper", "Blue-Lip Grouper"),
+                        ("Dark Skeletai Shark", "Dark Skeletal Shark"), ("Skeletal Shork", "Skeletal Shark"),
+                        ("Tigerfln", "Tigerfin"), ("Exotlc Tigerfin", "Exotic Tigerfin"),
+                        ("Golden Ribbon Ange1fish", "Golden Ribbon Angelfish"), ("Swordflsh", "Swordfish")):
+        assert fishdb.canonical(typo, cfg) == right, typo
+    for other in ("Saf Zone Ot Cted", "Ccrimson", "Golden", "Shark", "Island Of Zou"):
+        assert fishdb.canonical(other, cfg) is None, other
+    # Похожие рыбы не путаются между собой
+    assert fishdb.canonical("Golden Tigerfin", cfg) == "Golden Tigerfin"
+    assert fishdb.canonical("Skeletal Shark", cfg) == "Skeletal Shark"
+    # Улов с опечаткой записывается на рыбу со скрина
+    log = CatchLog(cfg, log=lambda t: None)
+    c = log.add(np.zeros((40, 200, 3), np.uint8), text="New ltem <Crimson Polkaxpuffer>")
+    assert c.fish_id == "01" and log.name_of(c) == "Crimson Polka Puffer" and not c.new
+    # Без «Item» засчитывается только известная рыба, мусор — нет
+    lines = [{"text": "<Golden Tigerfln>", "words": []}]
+    assert read_notice(np.zeros((40, 200, 3), np.uint8), lines, cfg)[0] == "Golden Tigerfin"
+    assert read_notice(np.zeros((40, 200, 3), np.uint8), [{"text": "'Saf Zone Ot Cted", "words": []}], cfg) is None
+    assert parse_name("New Item <Swordfish>") == "Swordfish"
+
+
+def test_tidy_learned_fixes_old_entries():
+    from macro import fishdb
+    from PIL import Image as Img
+    junk = fishdb.add_fish(fishdb.placeholder_icon("rare"), "Saf Zone Ot Cted", rarity="rare")
+    typo = fishdb.add_fish(fishdb.placeholder_icon("rare"), "Crimson Polkaxpuffer", rarity="rare")
+    sword = fishdb.add_fish(fishdb.placeholder_icon("epic"), "Swordflsh", rarity="epic")
+    other = fishdb.add_fish(Img.new("RGBA", (8, 8)), "Moon Eel", rarity="rare")
+    moves = dict(fishdb.tidy_learned())
+    assert moves == {junk["id"]: None, typo["id"]: "01"}
+    assert fishdb.by_id(junk["id"]) is None and fishdb.by_id(typo["id"]) is None
+    assert fishdb.display_name(fishdb.by_id(sword["id"])) == "Swordfish"
+    assert fishdb.display_name(fishdb.by_id(other["id"])) == "Moon Eel"
+    assert fishdb.display_name(fishdb.by_id("01")) == "Crimson Polka Puffer"

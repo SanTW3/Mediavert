@@ -9,7 +9,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from . import alarm, config, screen
+from . import alarm, config, fishdb, screen
 from .blackout import Blackout
 from .catches import CatchLog
 from .engine import MacroEngine
@@ -153,6 +153,15 @@ class App:
             on_catch=self._on_catch,
         )
         self.catch_log = CatchLog(self.cfg, self.log_threadsafe)
+        try:
+            moves = fishdb.tidy_learned(self.cfg)
+        except Exception as exc:
+            moves = []
+            print(f"tidy_learned: {exc}")
+        self.catch_log.apply_moves(moves)
+        if moves:
+            self.root.after(500, lambda n=len(moves): self.log(
+                f"Каталог рыб: исправлено или убрано записей с ошибками распознавания: {n}"))
 
         self.blackout = Blackout(self.root, self.log_threadsafe)
         self._blackout_job = None
@@ -894,7 +903,7 @@ class App:
                 return
             text = " | ".join(line["text"] for line in lines) or "ничего"
             self.log_threadsafe(f"Текст в области: {text}")
-            notice = read_notice(rgb, lines)
+            notice = read_notice(rgb, lines, self.cfg)
             if not notice:
                 self.log_threadsafe("Уведомления «New Item <рыба>» нет — такие надписи макрос пропускает")
                 return

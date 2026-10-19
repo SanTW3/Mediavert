@@ -5,8 +5,10 @@
 Команды не выполняются здесь, а кладутся в очередь окна (on_command), как горячие клавиши.
 """
 import json
+import re
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -28,11 +30,117 @@ COMMANDS = {"/menu": "menu", "/start": "menu", "/panel": "panel", "/screen_on": 
 API = "https://api.telegram.org"
 
 
+TOKEN_RE = re.compile(r"\d{5,}:[A-Za-z0-9_-]{30,}")
+
+
+def clean_token(value):
+    """Токен из того, что вставили: с пробелами, переносом строки, «bot» в начале или целой ссылкой."""
+    text = str(value or "").strip()
+    m = TOKEN_RE.search(text)
+    return m.group(0) if m else text
+
+
+def clean_chat(value):
+    return re.sub(r"[^\d-]", "", str(value or ""))
+
+
+class TelegramError(Exception):
+    def __init__(self, code, description):
+        super().__init__(f"{code}: {description}")
+        self.code = code
+        self.description = description
+
+
 def _call(token, method, params=None, timeout=15):
     data = urllib.parse.urlencode(params or {}).encode()
     req = urllib.request.Request(f"{API}/bot{token}/{method}", data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        # Telegram объясняет ошибку в теле ответа — достаём её
+        try:
+            body = json.loads(exc.read())
+            raise TelegramError(body.get("error_code", exc.code), body.get("description", "")) from None
+        except (ValueError, AttributeError):
+            raise TelegramError(exc.code, str(exc.reason)) from None
+
+
+def explain(exc):
+    """Понятная причина ошибки Telegram и что сделать."""
+    if isinstance(exc, urllib.error.HTTPError):    # из alarm._post: тело ответа ещё не прочитано
+        try:
+            body = json.loads(exc.read())
+            exc = TelegramError(body.get("error_code", exc.code), body.get("description", ""))
+        except Exception:
+            exc = TelegramError(exc.code, str(exc.reason))
+    if isinstance(exc, TelegramError):
+        d = exc.description.lower()
+        if exc.code == 401 or "unauthorized" in d:
+            return "неверный токен бота — скопируйте его заново у @BotFather (целиком, вида 123456:ABC…)"
+        if exc.code == 409:
+            return ("этот бот уже запущен в другой программе или на другом ПК (у каждого должен быть "
+                    "свой бот из @BotFather)")
+        if "chat not found" in d:
+            return ("chat not found — неверный chat id или вы ещё ни разу не писали боту: откройте бота, "
+                    "нажмите «Start» и затем «Узнать chat id»")
+        if exc.code == 403 or "blocked" in d or "can't initiate" in d:
+            return "бот не может написать вам: откройте бота в Telegram и нажмите «Start» (или разблокируйте его)"
+        if exc.code == 400:
+            return f"Telegram отклонил запрос: {exc.description}"
+        return str(exc)
+    text = str(exc)
+    if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
+        return (f"нет связи с api.telegram.org ({text}) — проверьте интернет; если Telegram у провайдера "
+                "заблокирован, включите VPN на ПК")
+    return text
+
+
+def find_chats(token):
+    """Чаты, которые писали боту (для «Узнать chat id»): [(chat_id, имя)]."""
+    try:
+        _call(token, "deleteWebhook")    # с вебхуком getUpdates не работает
+    except Exception:
+        pass
+    updates = _call(token, "getUpdates", {"timeout": 0}).get("result") or []
+    chats = {}
+    for upd in updates:
+        msg = upd.get("message") or (upd.get("callback_query") or {}).get("message") or {}
+        chat = msg.get("chat") or {}
+        if chat.get("type") == "private" and chat.get("id"):
+            name = " ".join(x for x in (chat.get("first_name"), chat.get("last_name")) if x) or chat.get("username")
+            chats[str(chat["id"])] = name or str(chat["id"])
+    return list(chats.items())
+
+
+def diagnose(cfg):
+    """Проверка Telegram по шагам. Возвращает (всё ок, [строки отчёта])."""
+    token = clean_token(cfg.get("telegram_token"))
+    chat = clean_chat(cfg.get("telegram_chat_id"))
+    out = []
+    if not token:
+        return False, ["Токен бота не заполнен: создайте бота у @BotFather и вставьте токен"]
+    if not TOKEN_RE.fullmatch(token):
+        out.append("Токен не похож на токен бота (должен быть вида 123456789:AAE…), проверяю всё равно")
+    try:
+        me = _call(token, "getMe").get("result") or {}
+        out.append(f"✓ Токен верный, бот @{me.get('username')}")
+    except Exception as exc:
+        return False, out + ["✗ " + explain(exc)]
+    if not chat:
+        return False, out + ["✗ Chat id не заполнен: напишите боту /start и нажмите «Узнать chat id»"]
+    if chat == token.split(":")[0]:
+        return False, out + ["✗ В chat id вписан id самого бота. Нужен ваш id: напишите боту /start "
+                             "и нажмите «Узнать chat id»"]
+    try:
+        _call(token, "sendMessage", {"chat_id": chat, "text": "✅ Проверка: макрос может писать вам в Telegram"})
+        out.append(f"✓ Сообщение отправлено в чат {chat}")
+    except Exception as exc:
+        return False, out + ["✗ " + explain(exc)]
+    if not cfg.get("tg_control"):
+        out.append("Кнопки управления выключены («Кнопки управления в Telegram») — тревоги придут, "
+                   "но бот не будет отвечать на кнопки")
+    return True, out
 
 
 class TelegramControl:
@@ -45,14 +153,16 @@ class TelegramControl:
         self._offset = None
         self._token = None
         self._stop = threading.Event()
+        self._failing = None      # текст последней ошибки — пишем в лог один раз
+        self.seen_chats = {}      # кто писал боту, пока работает опрос: для «Узнать chat id»
         threading.Thread(target=self._loop, daemon=True).start()
 
     def stop(self):
         self._stop.set()
 
     def _creds(self):
-        token = str(self.cfg.get("telegram_token") or "").strip()
-        chat = str(self.cfg.get("telegram_chat_id") or "").strip()
+        token = clean_token(self.cfg.get("telegram_token"))
+        chat = clean_chat(self.cfg.get("telegram_chat_id"))
         if not (self.cfg.get("tg_control") and token and chat):
             return None, None
         return token, chat
@@ -76,7 +186,7 @@ class TelegramControl:
         try:
             _call(token, "sendMessage", params)
         except Exception as exc:
-            self.log(f"Telegram: не удалось отправить сообщение: {exc}")
+            self.log(f"Telegram: не удалось отправить сообщение: {explain(exc)}")
 
     def _link(self):
         try:
@@ -104,7 +214,7 @@ class TelegramControl:
             try:
                 alarm.send_telegram(token, chat, caption, png)
             except Exception as exc:
-                self.log(f"Telegram: не удалось отправить скриншот: {exc}")
+                self.log(f"Telegram: не удалось отправить скриншот: {explain(exc)}")
 
     def send_media(self, data, kind, caption):
         """Картинка (png) или анимация (gif) с подписью."""
@@ -119,7 +229,7 @@ class TelegramControl:
                                            {"animation": ("catch.gif", data, "image/gif")})
             alarm._post(f"{API}/bot{token}/sendAnimation", body, {"Content-Type": ctype})
         except Exception as exc:
-            self.log(f"Telegram: не удалось отправить анимацию: {exc}")
+            self.log(f"Telegram: не удалось отправить анимацию: {explain(exc)}")
 
     def _loop(self):
         while not self._stop.is_set():
@@ -144,10 +254,26 @@ class TelegramControl:
                 for upd in updates:
                     self._offset = upd["update_id"] + 1
                     self._handle(token, chat, upd)
-            except Exception:
+                if self._failing:
+                    self.log("Telegram: бот снова на связи")
+                    self._failing = None
+            except Exception as exc:
+                reason = explain(exc)
+                if reason != self._failing:   # раньше ошибки бота терялись молча
+                    self.log(f"Telegram: бот не работает — {reason}")
+                    self._failing = reason
                 self._stop.wait(5)  # нет сети или неверный токен — пробуем позже
 
+    @property
+    def polling(self):
+        """Опрос getUpdates уже идёт: второй параллельный запрос Telegram отклонит (409)."""
+        return self._token is not None
+
     def _handle(self, token, chat, upd):
+        src = (upd.get("message") or (upd.get("callback_query") or {}).get("message") or {}).get("chat") or {}
+        if src.get("type") == "private" and src.get("id"):
+            name = " ".join(x for x in (src.get("first_name"), src.get("last_name")) if x)
+            self.seen_chats[str(src["id"])] = name or src.get("username") or str(src["id"])
         cb = upd.get("callback_query")
         if cb:
             if str(cb.get("message", {}).get("chat", {}).get("id")) != chat:

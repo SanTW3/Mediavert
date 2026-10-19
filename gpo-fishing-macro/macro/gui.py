@@ -555,7 +555,9 @@ class App:
         self._text(al, "Сервер ntfy", "ntfy_server")
         self._text(al, "Тема ntfy", "ntfy_topic", "Та же тема, что в приложении ntfy")
         self._text(al, "Токен Telegram-бота", "telegram_token", secret=True)
-        self._text(al, "Chat id в Telegram", "telegram_chat_id")
+        self._text(al, "Chat id в Telegram", "telegram_chat_id", "Ваш id, не бота: «Узнать chat id» найдёт его сам")
+        self._buttons(al, ("Проверить Telegram", self._check_tg, ACCENT, ACCENT_HOVER),
+                      ("Узнать chat id", self._find_chat_id, FIELD, CARD_BORDER))
         self._text(al, "Pushover: user key", "pushover_user", secret=True)
         self._text(al, "Pushover: app token", "pushover_token", secret=True)
         self._num(al, "Повторять тревогу (с)", "alarm_repeat_sec",
@@ -686,6 +688,49 @@ class App:
             alarm.send_alarm(self.cfg, "Тестовая тревога — всё работает", png,
                              log=lambda t: self.events.put(("log", t)))
         threading.Thread(target=job, daemon=True).start()
+
+    def _check_tg(self):
+        from .tgcontrol import diagnose
+        self.log("Проверяю Telegram…")
+
+        def job():
+            ok, lines = diagnose(self.cfg)
+            for line in lines:
+                self.log_threadsafe("Telegram: " + line)
+            self.log_threadsafe("Telegram работает ✓" if ok else "Telegram не настроен — см. строки выше")
+        threading.Thread(target=job, daemon=True).start()
+
+    def _find_chat_id(self):
+        from .tgcontrol import clean_token, explain, find_chats
+        token = clean_token(self.cfg.get("telegram_token"))
+        if not token:
+            self.log("Сначала вставьте токен бота")
+            return
+
+        def job():
+            chats = dict(self.tg.seen_chats)
+            if not chats and not self.tg.polling:
+                try:
+                    chats = dict(find_chats(token))
+                except Exception as exc:
+                    self.log_threadsafe(f"Telegram: {explain(exc)}")
+                    return
+            if not chats:
+                self.log_threadsafe("Никто ещё не писал боту: откройте его в Telegram, нажмите «Start» "
+                                    "(или напишите любое сообщение) и нажмите «Узнать chat id» ещё раз")
+                return
+            if len(chats) > 1:
+                self.log_threadsafe("Боту писали несколько человек: " +
+                                    ", ".join(f"{n} — {cid}" for cid, n in chats.items()) +
+                                    ". Впишите свой chat id вручную")
+                return
+            (cid, name), = chats.items()
+            self.root.after(0, lambda: self._set_chat_id(cid, name))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _set_chat_id(self, cid, name):
+        self.var("telegram_chat_id", str).set(cid)
+        self.log(f"Chat id найден: {cid} ({name}). Теперь нажмите «Проверить Telegram»")
 
     def open_guide(self):
         if self._guide is not None and self._guide.winfo_exists():

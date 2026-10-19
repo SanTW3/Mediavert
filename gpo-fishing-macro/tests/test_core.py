@@ -824,3 +824,41 @@ def test_fangfish_icon_and_old_dark_shark_name_dropped():
     black = np.zeros((40, 200, 3), np.uint8)
     assert log.add(black, text="New Item <Dark Shark>").fish_id == "15"
     assert log.add(black, text="New Item <Fangflsh>").fish_id == "08"
+
+
+def test_telegram_diagnose_explains_problems(monkeypatch):
+    from macro import tgcontrol as tc
+    good = "123456789:AAEabcdefghijklmnopqrstuvwxyz012345"
+    assert tc.clean_token(f"  bot{good}\n") == good
+    assert tc.clean_token(f"https://api.telegram.org/bot{good}/getMe") == good
+    assert tc.clean_chat(" 12345 \n") == "12345" and tc.clean_chat("-100 42") == "-10042"
+    sent = []
+
+    def fake(errors):
+        def call(token, method, params=None, timeout=15):
+            if method in errors:
+                raise errors[method]
+            if method == "getMe":
+                return {"result": {"username": "my_fish_bot"}}
+            if method == "getUpdates":
+                return {"result": [{"update_id": 1, "message": {"chat": {"id": 777, "type": "private",
+                                                                          "first_name": "Друг"}}}]}
+            sent.append((method, params))
+            return {"ok": True}
+        return call
+
+    cfg = dict(config.DEFAULTS, telegram_token=good, telegram_chat_id="777")
+    monkeypatch.setattr(tc, "_call", fake({}))
+    ok, lines = tc.diagnose(cfg)
+    assert ok and "@my_fish_bot" in lines[0] and sent[-1][1]["chat_id"] == "777"
+    assert tc.find_chats(good) == [("777", "Друг")]
+    monkeypatch.setattr(tc, "_call", fake({"getMe": tc.TelegramError(401, "Unauthorized")}))
+    ok, lines = tc.diagnose(cfg)
+    assert not ok and "неверный токен" in lines[-1]
+    monkeypatch.setattr(tc, "_call", fake({"sendMessage": tc.TelegramError(400, "Bad Request: chat not found")}))
+    assert "Start" in tc.diagnose(cfg)[1][-1]
+    assert "id самого бота" in tc.diagnose(dict(cfg, telegram_chat_id="123456789"))[1][-1]
+    assert "Узнать chat id" in tc.diagnose(dict(cfg, telegram_chat_id=""))[1][-1]
+    monkeypatch.setattr(tc, "_call", fake({"getMe": tc.urllib.error.URLError("timed out")}))
+    assert "VPN" in tc.diagnose(cfg)[1][-1]
+    assert "другой программе" in tc.explain(tc.TelegramError(409, "Conflict: terminated by other getUpdates"))

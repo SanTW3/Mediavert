@@ -84,8 +84,9 @@ def send_alarm(cfg, reason, screenshot_png=None, log=print):
         jobs.append(("ntfy", lambda: send_ntfy(cfg["ntfy_server"] or "https://ntfy.sh",
                                                cfg["ntfy_topic"], title, message)))
     if cfg.get("telegram_token") and cfg.get("telegram_chat_id"):
+        from .tgcontrol import clean_chat, clean_token
         jobs.append(("Telegram", lambda: send_telegram(
-            cfg["telegram_token"], cfg["telegram_chat_id"], f"🚨 {title}\n{message}",
+            clean_token(cfg["telegram_token"]), clean_chat(cfg["telegram_chat_id"]), f"🚨 {title}\n{message}",
             screenshot_png if cfg.get("alarm_screenshot") else None)))
     if cfg.get("pushover_user") and cfg.get("pushover_token"):
         jobs.append(("Pushover", lambda: send_pushover(cfg["pushover_user"], cfg["pushover_token"],
@@ -96,6 +97,9 @@ def send_alarm(cfg, reason, screenshot_png=None, log=print):
             sent += 1
             log(f"Тревога отправлена: {name}")
         except Exception as exc:  # сеть, неверный токен и т.п. — не роняем макрос
+            if name == "Telegram":
+                from .tgcontrol import explain
+                exc = explain(exc)
             log(f"Не удалось отправить в {name}: {exc}")
     if not jobs:
         log("Тревога не отправлена: не настроен ни один канал")

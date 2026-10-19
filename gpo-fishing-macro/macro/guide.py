@@ -57,12 +57,13 @@ PAGES = [
         "title": "4. Telegram-бот",
         "text": (
             "1) Напишите @BotFather → /newbot → придумайте имя. Он пришлёт токен — вставьте ниже.\n"
-            "2) Найдите своего бота и нажмите «Start».\n"
-            "3) Напишите @userinfobot — он ответит вашим Id. Вставьте его ниже.\n"
-            "4) Нажмите «Тест тревоги» — бот должен написать вам."
+            "   У каждого свой бот: один бот на двух ПК работать не будет.\n"
+            "2) Найдите своего бота и нажмите «Start» — без этого бот не может вам написать.\n"
+            "3) Нажмите «Узнать chat id» — программа сама вставит ваш id.\n"
+            "4) Нажмите «Проверить Telegram» — бот пришлёт сообщение, а в журнале будет видно, что не так."
         ),
         "fields": [("Токен бота", "telegram_token", True), ("Chat id", "telegram_chat_id", False)],
-        "buttons": [("Тест тревоги", "alarm_test")],
+        "buttons": [("Узнать chat id", "tg_chat"), ("Проверить Telegram", "tg_check")],
     },
     {
         "title": "5. Что умеет бот и мини-приложение",
@@ -174,6 +175,10 @@ class Guide(ctk.CTkToplevel):
             app._test_catch()
         elif action == "alarm_test":
             app._test_alarm()
+        elif action == "tg_chat":
+            app._find_chat_id()
+        elif action == "tg_check":
+            app._check_tg()
         elif action == "panel":
             app._on_tg("panel")
 

@@ -810,3 +810,17 @@ def test_renamed_builtin_still_found_by_game_name():
     log = CatchLog(dict(config.DEFAULTS, fish_names={"04": "Моя легенда"}), log=lambda t: None)
     c = log.add(np.zeros((40, 200, 3), np.uint8), text="New Item <Golden Polka Puffer>")
     assert c.fish_id == "04" and log.name_of(c) == "Моя легенда" and not c.new
+
+
+def test_fangfish_icon_and_old_dark_shark_name_dropped():
+    from macro import fishdb
+    from macro.catches import CatchLog
+    assert fishdb.by_id("08")["name"] == "Fangfish" and fishdb.by_id("08")["rarity"] == "rare"
+    assert fishdb.by_id("15")["name"] == "Dark Skeletal Shark" and fishdb.by_id("15")["rarity"] == "legendary"
+    fishdb.learn_name("08", "Dark Skeletal Shark")       # так записывали старые версии
+    fishdb.tidy_learned()
+    assert fishdb.display_name(fishdb.by_id("08")) == "Fangfish"
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    black = np.zeros((40, 200, 3), np.uint8)
+    assert log.add(black, text="New Item <Dark Shark>").fish_id == "15"
+    assert log.add(black, text="New Item <Fangflsh>").fish_id == "08"

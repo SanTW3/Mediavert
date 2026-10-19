@@ -38,7 +38,7 @@ BUILTIN = [
     {"id": "05", "name": "Golden Tigerfin", "rarity": "legendary", "price": 12840},
     {"id": "06", "name": "Jack-O'-Bite", "rarity": "legendary", "price": 10583},
     {"id": "07", "name": "Skeletal Shark", "rarity": "epic", "price": 14913},
-    {"id": "08", "name": "Dark Skeletal Shark", "rarity": "legendary", "price": 2703},
+    {"id": "08", "name": "Fangfish", "rarity": "rare", "price": 2703},
     {"id": "09", "name": "Candy Corn Squid", "rarity": "rare", "price": 12318},
     {"id": "10", "name": "Exotic Tigerfin", "rarity": "rare", "price": 2000},
     {"id": "11", "name": "Zebra Ribbon Angelfish", "rarity": "rare", "price": 2328},
@@ -46,7 +46,8 @@ BUILTIN = [
     {"id": "12", "name": "Anglerfish", "rarity": None, "price": 0},
     {"id": "13", "name": "Golden Ribbon Angelfish", "rarity": None, "price": 0},
     {"id": "14", "name": "Swordfish", "rarity": None, "price": 0},
-    {"id": "15", "name": "Fangfish", "rarity": None, "price": 0},
+    # Иконку на скрине закрывала надпись — пока силуэт легендарной рыбы
+    {"id": "15", "name": "Dark Skeletal Shark", "rarity": "legendary", "price": 0},
 ]
 FISH = BUILTIN  # совместимость
 RARITY_ORDER = {"legendary": 0, "epic": 1, "rare": 2, "common": 3, None: 4}
@@ -342,9 +343,15 @@ def tidy_learned(cfg=None):
     moved = []
     with _lock:
         names = _load()["names"]
+        builtin_names = {f["id"]: f["name"] for f in BUILTIN}
         for fid, n in list(names.items()):
             right = match_name(n, cfg)
-            if not right:
+            if fid in builtin_names and name_key(n) != name_key(builtin_names[fid]):
+                # У рыб со скринов названия уже из игры; выученное поверх — от старых версий
+                # (например, «Dark Skeletal Shark» на иконке Fangfish)
+                names.pop(fid)
+                _save()
+            elif not right:
                 names.pop(fid)              # пустое или мусорное название поверх встроенного
                 _save()
             elif right != n:

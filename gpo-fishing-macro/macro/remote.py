@@ -14,7 +14,7 @@ import urllib.request
 
 COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches"}
 STATUS_EVERY = 30.0     # даже без изменений — «я жив» раз в 30 с
-MIN_INTERVAL = 6.0      # не чаще раза в 6 с (лимиты ntfy.sh)
+MIN_INTERVAL = 10.0     # не чаще раза в 10 с: у ntfy.sh лимит ~12 запросов в минуту, при превышении — HTTP 429
 COMMAND_MAX_AGE = 60    # команды старше минуты (пришли, пока ПК был выключен) игнорируем
 
 
@@ -38,7 +38,8 @@ class Remote:
         self._stop = threading.Event()
         self._kick = threading.Event()
         self._last_sent = None
-        self._last_time = 0.0
+        self._last_time = -MIN_INTERVAL
+        self._failing = False
         threading.Thread(target=self._publish_loop, daemon=True).start()
         threading.Thread(target=self._command_loop, daemon=True).start()
 
@@ -68,7 +69,9 @@ class Remote:
             except Exception:
                 continue
             now = time.monotonic()
-            changed = status != self._last_sent
+            # Время работы панель досчитывает сама — его изменение не повод слать статус
+            key = {k: v for k, v in status.items() if k != "runtime"}
+            changed = key != self._last_sent
             due = now - self._last_time >= STATUS_EVERY
             if not (changed or due) or now - self._last_time < MIN_INTERVAL:
                 continue
@@ -79,10 +82,17 @@ class Remote:
                     f"{self._server()}/{topic}", data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
                     headers={"Cache": "yes"}, method="POST")
                 urllib.request.urlopen(req, timeout=15).read()
-                self._last_sent = status
+                self._last_sent = key
                 self._last_time = now
-            except Exception:
+                if self._failing:
+                    self.log("Мини-приложение: статус снова отправляется")
+                    self._failing = False
+            except Exception as exc:
                 self._last_time = now  # нет сети — следующая попытка не раньше MIN_INTERVAL
+                if not self._failing:   # пишем один раз, а не каждые 10 секунд
+                    self.log(f"Мини-приложение: не удалось отправить статус в ntfy ({exc}) — "
+                             "на телефоне будет «ПК не в сети»")
+                    self._failing = True
 
     # ---------- команды: телефон → ПК ----------
     def _command_loop(self):

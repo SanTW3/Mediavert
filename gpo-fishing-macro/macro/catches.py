@@ -44,8 +44,9 @@ def clean_name(text):
 
 # «New Item <Fangfish>»: название в угловых скобках. OCR иногда путает скобки — берём похожие
 BRACKETED = re.compile(r"[<«‹(\[{]\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*[>»›)\]}]")
-NEW_ITEM = re.compile(r"new\s*item\s*[:\-]?\s*[<«‹(\[{]?\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*(?:[>»›)\]}]|$)",
-                      re.IGNORECASE)
+# Шрифт игры OCR читает как «Nev ltem» — допускаем такие ошибки
+NEW_ITEM = re.compile(r"ne[wv]{1,2}\s*[il1|!]\s*tem\s*[:\-]?\s*[<«‹(\[{]?\s*([A-Za-z][A-Za-z0-9' \-]{1,40}?)\s*"
+                      r"(?:[>»›)\]}]|$)", re.IGNORECASE)
 
 
 def parse_name(text):
@@ -57,6 +58,43 @@ def parse_name(text):
             if len(name) >= 2:
                 return name
     return None
+
+
+def _dist_to_dark(dark, axis, reverse):
+    """Расстояние до ближайшего тёмного пикселя по одной оси в одну сторону."""
+    d = np.flip(dark, axis) if reverse else dark
+    n = d.shape[axis]
+    idx = np.arange(n).reshape((-1, 1) if axis == 0 else (1, -1))
+    last = np.where(d, idx, -10 ** 6)
+    last = np.maximum.accumulate(last, axis=axis)
+    dist = idx - last
+    return np.flip(dist, axis) if reverse else dist
+
+
+def text_mask(rgb, stroke=5):
+    """Только буквы с тёмной обводкой — чёрным по белому. Буква — яркий пиксель, зажатый обводкой
+    с двух противоположных сторон (он внутри штриха); вода и небо отпадают."""
+    img = np.asarray(rgb)[:, :, :3].astype(np.int16)
+    mx = img.max(axis=2)
+    dark = mx < 70
+    # Внутри штриха буквы обводка близко с обеих сторон — по горизонтали или по вертикали
+    inside = np.zeros(dark.shape, bool)
+    for axis in (0, 1):
+        inside |= (_dist_to_dark(dark, axis, False) <= stroke) & (_dist_to_dark(dark, axis, True) <= stroke)
+    glyph = inside & ~dark & (mx > 225)   # заливка букв почти белая/яркая, вода темнее
+    out = np.full(mx.shape, 255, np.uint8)
+    out[glyph] = 0
+    return np.dstack([out, out, out])
+
+
+def ocr_variants(rgb):
+    """Снимок для OCR в нескольких видах: как есть, крупнее, маска текста (крупнее)."""
+    a = np.ascontiguousarray(np.asarray(rgb)[:, :, :3])
+    yield a
+    big = np.asarray(Image.fromarray(a).resize((a.shape[1] * 2, a.shape[0] * 2), Image.LANCZOS))
+    yield big
+    mask = Image.fromarray(text_mask(a)).resize((a.shape[1] * 2, a.shape[0] * 2), Image.LANCZOS)
+    yield np.asarray(mask)
 
 
 def text_rarity(rgb, rect=None):
@@ -187,11 +225,13 @@ class CatchLog:
     def add(self, rgb, text=None, lines=None):
         """Записать улов по снимку уведомления «New Item <рыба>». Возвращает Catch или None,
         если на снимке нет такого уведомления (другие надписи игры не считаются)."""
-        if lines is None:
-            lines = [{"text": text, "words": []}] if text is not None else ocr.read_lines(
-                np.ascontiguousarray(np.asarray(rgb)[:, :, :3]))
-        self.last_texts = (self.last_texts + [" | ".join(line["text"] for line in lines if line["text"])])[-12:]
-        notice = read_notice(rgb, lines)
+        if lines is not None or text is not None:
+            if lines is None:
+                lines = [{"text": text, "words": []}]
+            notice = read_notice(rgb, lines)
+            self._remember(lines)
+        else:
+            notice = self.read_any(rgb)
         if not notice:
             return None
         name, rarity = notice
@@ -213,6 +253,23 @@ class CatchLog:
             match.last = time.time()
             match.new = new
             return match
+
+    def _remember(self, lines):
+        self.last_texts = (self.last_texts + [" | ".join(line["text"] for line in lines if line["text"])])[-24:]
+
+    def read_any(self, rgb):
+        """Прочитать уведомление, перебирая варианты снимка (см. ocr_variants)."""
+        for i, img in enumerate(ocr_variants(rgb)):
+            lines = ocr.read_lines(img)
+            self._remember(lines)
+            if i:   # рамки слов — в координатах увеличенной картинки, цвет меряем по ней же
+                notice = read_notice(img if i == 1 else np.asarray(Image.fromarray(
+                    np.ascontiguousarray(np.asarray(rgb)[:, :, :3])).resize((img.shape[1], img.shape[0]))), lines)
+            else:
+                notice = read_notice(rgb, lines)
+            if notice:
+                return notice
+        return None
 
     def add_frames(self, frames):
         """Несколько снимков подряд (уведомление появляется и гаснет) — берём первый с рыбой."""

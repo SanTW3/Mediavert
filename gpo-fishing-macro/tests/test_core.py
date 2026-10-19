@@ -558,3 +558,22 @@ def test_catch_area_defaults_to_center_of_roblox(monkeypatch):
     monkeypatch.setattr(eng.winput, "roblox_rect", lambda: (100, 50, 1000, 600))
     assert eng.catch_area(dict(config.DEFAULTS)) == [320, 182, 560, 216]
     assert eng.catch_area(dict(config.DEFAULTS, catch_area=[1, 2, 3, 4])) == [1, 2, 3, 4]
+
+
+def test_windows_ocr_reads_game_notification():
+    """Настоящий снимок области из игры: «New Item <Crimson Polka Puffer>» над водой (только Windows)."""
+    if sys.platform != "win32":
+        pytest.skip("Windows OCR есть только на Windows")
+    from macro import ocr
+    from macro.catches import CatchLog, ocr_variants, parse_name
+    if not ocr.available():
+        pytest.skip("на этой Windows нет движка OCR")
+    rgb = np.asarray(Image.open(os.path.join(os.path.dirname(__file__), "catch_area_crimson.png")).convert("RGB"))
+    for i, img in enumerate(ocr_variants(rgb)):
+        lines = ocr.read_lines(img, raise_errors=True)
+        print(f"OCR variant {i}:", [ln["text"] for ln in lines], "->", parse_name("\n".join(ln["text"] for ln in lines)))
+    log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
+    c = log.add_frames([rgb])
+    assert c is not None, log.last_texts
+    assert log.name_of(c).lower().replace(" ", "") == "crimsonpolkapuffer"
+    assert c.rarity == "rare"

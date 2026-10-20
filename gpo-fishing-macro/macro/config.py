@@ -16,7 +16,10 @@ DEFAULTS = {
     "hotkey_exit": "f3",
     "hotkey_blackout": "f4",
     "hotkey_hud": "f5",
-    "hud_enabled": True,        # HUD поверх игры: рамка области F2 и показатели
+    "hud_enabled": True,
+    "auto_update": True,        # проверять новую версию exe при запуске (GitHub Releases)
+    "update_repo": "SanTW3/Mediavert",
+    "last_version": "",         # версия при прошлом запуске — чтобы сказать «обновлено до …»        # HUD поверх игры: рамка области F2 и показатели
     "always_on_top": True,
     "rod_hotkey": "7",
     "other_hotkey": "2",

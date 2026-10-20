@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import sys
@@ -927,3 +928,63 @@ def test_black_screen_checks_roblox_window_and_rechecks(monkeypatch):
     cfg = dict(config.DEFAULTS, black_threshold=0.5)
     config.migrate(cfg, 4)
     assert cfg["black_threshold"] == 0.85
+
+
+def test_updater_downloads_checks_and_swaps_exe(tmp_path, monkeypatch):
+    import hashlib
+    from macro import updater
+    payload = b"MZ new exe" * 1000
+    sha = hashlib.sha256(payload).hexdigest()
+    release = {"body": f"Автообновление\n\nversion: 9.9.9\nsha256: {sha}\ncommit: abc",
+               "assets": [{"name": "GPO-Fishing-Macro.exe", "browser_download_url": "http://x/exe", "size": len(payload)}]}
+    upd = updater.parse_release(release)
+    assert upd.version == "9.9.9" and upd.sha256 == sha
+    assert updater.is_newer("1.10.0", "1.9.9") and not updater.is_newer("1.5.0", "1.5.0")
+    assert updater.parse_release({"body": "", "assets": []}) is None
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.close()
+    monkeypatch.setattr(updater, "_get", lambda url, timeout=20: Resp(json.dumps(release).encode() if "api." in url
+                                                                        else payload))
+    assert updater.check("o/r").version == "9.9.9"
+    exe = tmp_path / "GPO-Fishing-Macro.exe"
+    exe.write_bytes(b"MZ old exe")
+    (tmp_path / "config.json").write_text("{}")
+    got = []
+    new = updater.download(upd, str(exe) + ".new", got.append)
+    assert got[-1] == 1.0 and open(new, "rb").read() == payload
+    updater.install(new, str(exe), launch=False)
+    assert exe.read_bytes() == payload and (tmp_path / "GPO-Fishing-Macro.old.exe").read_bytes() == b"MZ old exe"
+    assert (tmp_path / "config.json").exists()                       # настройки на месте
+    updater.cleanup(str(exe))
+    assert not (tmp_path / "GPO-Fishing-Macro.old.exe").exists()
+    # Повреждённый файл не ставится
+    bad = updater.Update("9.9.9", "http://x/exe", "0" * 64, len(payload))
+    with pytest.raises(ValueError):
+        updater.download(bad, str(exe) + ".new")
+    assert not os.path.exists(str(exe) + ".new")
+
+
+def test_windows_allows_renaming_running_exe(tmp_path):
+    """На этом держится обновление: запущенный exe Windows переименовать даёт (только Windows)."""
+    if sys.platform != "win32":
+        pytest.skip("только Windows")
+    import shutil
+    import subprocess
+    from macro import updater
+    exe = tmp_path / "GPO-Fishing-Macro.exe"
+    shutil.copy(sys.executable, exe)
+    proc = subprocess.Popen([str(exe), "-c", "import time; time.sleep(20)"])
+    try:
+        time.sleep(1)
+        new = tmp_path / "GPO-Fishing-Macro.exe.new"
+        new.write_bytes(b"new")
+        updater.install(str(new), str(exe), launch=False)
+        assert exe.read_bytes() == b"new" and (tmp_path / "GPO-Fishing-Macro.old.exe").exists()
+    finally:
+        proc.kill()
+        proc.wait()

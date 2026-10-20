@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write   # релиз gpo-latest — из него программа обновляется сама
     defaults:
       run:
         working-directory: gpo-fishing-macro
@@ -36,3 +38,21 @@ jobs:
         with:
           name: GPO-Fishing-Macro
           path: gpo-fishing-macro/dist/GPO-Fishing-Macro.exe
+      # Обновление прямо из программы: exe в один «плавающий» предварительный релиз gpo-latest.
+      # Сначала файл, потом описание с версией и SHA-256 — программа не увидит новую версию раньше файла.
+      # Предварительный и не «latest», чтобы не мешать релизам Mediavert и его автообновлению.
+      - name: Publish update (release gpo-latest)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ver = python -c "import macro; print(macro.__version__)"
+          $sha = (Get-FileHash dist\GPO-Fishing-Macro.exe -Algorithm SHA256).Hash.ToLower()
+          $notes = "Автообновление GPO Fishing Macro (программа скачивает этот exe сама).`n`nversion: $ver`nsha256: $sha`ncommit: $env:GITHUB_SHA"
+          gh release view gpo-latest --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create gpo-latest --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --latest=false --title "GPO Fishing Macro $ver" --notes "Загрузка…"
+          }
+          gh release upload gpo-latest dist\GPO-Fishing-Macro.exe --repo $env:GITHUB_REPOSITORY --clobber
+          gh release edit gpo-latest --repo $env:GITHUB_REPOSITORY --prerelease --latest=false --title "GPO Fishing Macro $ver" --notes $notes

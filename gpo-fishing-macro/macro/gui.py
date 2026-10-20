@@ -9,7 +9,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from . import alarm, config, fishdb, screen, winput
+from . import __version__, alarm, config, fishdb, screen, updater, winput
 from .blackout import Blackout
 from .catches import CatchLog
 from .engine import MacroEngine
@@ -167,6 +167,9 @@ class App:
         from .hud import Hud
         self.hud = Hud(self.root, self.log_threadsafe, font=self.display)
         self.root.after(1000, self._tick_hud)
+        self._update = None
+        self._updating = False
+        self.root.after(4000, self._startup_update)
         self._blackout_job = None
         self._status_text = "Остановлен"
         self._status_color = "red"
@@ -330,6 +333,11 @@ class App:
                       hover_color=ACCENT, border_width=1, border_color=HILITE, text_color=HILITE,
                       font=(self.display, 12, "bold", "italic"), command=self.open_guide).place(
             relx=1, x=-150, y=78, anchor="ne")
+        # Появляется, когда на GitHub есть версия новее
+        self.update_btn = ctk.CTkButton(header, text="", width=150, height=22, corner_radius=0, fg_color=GREEN,
+                                        hover_color=GREEN_HOVER, border_width=1, border_color=HILITE,
+                                        text_color="white", font=(self.display, 12, "bold", "italic"),
+                                        command=self._do_update)
         self.start_hint = ctk.CTkLabel(header, text="", font=(FONT, 11, "bold"), text_color=HILITE,
                                        fg_color="#0b3478", corner_radius=0, height=18)
         self.start_hint.place(relx=1, x=-20, y=78, anchor="ne")
@@ -387,6 +395,12 @@ class App:
         self._switch(win, "HUD поверх игры", "hud_enabled",
                      "Рамка области мини-игры и показатели, пока идёт ловля. Клавиша — в «Горячих клавишах»",
                      command=lambda: self._tick_hud(once=True))
+
+        up = self._card(page, "Обновления", f"Сейчас версия {__version__}")
+        self._switch(up, "Проверять при запуске", "auto_update",
+                     "Новая версия скачивается с GitHub прямо в программу, настройки и улов остаются")
+        self._buttons(up, ("Проверить сейчас", lambda: self._check_update(silent=False), ACCENT, ACCENT_HOVER),
+                      ("Обновить", self._do_update, FIELD, CARD_BORDER))
 
         bo = self._card(page, "Чёрный экран во время рыбалки",
                         "Вы видите чёрный экран, а макрос по-прежнему видит игру")
@@ -1118,6 +1132,103 @@ class App:
         if lines > 500:
             self.log_box.delete("1.0", f"{lines - 500}.0")
         self.log_box.configure(state="disabled")
+
+    # ---------- обновление ----------
+    def _startup_update(self):
+        last = self.cfg.get("last_version")
+        if last and last != __version__:
+            self.log(f"Программа обновлена: {last} → {__version__}")
+        if last != __version__:
+            self.cfg["last_version"] = __version__
+            self._save()
+        if updater.frozen():
+            updater.cleanup()                     # старый exe от прошлого обновления
+        if self.cfg.get("auto_update"):
+            self._check_update(silent=True)
+        self.root.after(6 * 3600 * 1000, self._startup_update)
+
+    def _check_update(self, silent=True):
+        if not updater.frozen():
+            if not silent:
+                self.log("Обновление из программы работает только в exe (сейчас запуск из исходников)")
+            return
+        if not silent:
+            self.log("Проверяю обновления…")
+
+        def job():
+            try:
+                upd = updater.check(self.cfg.get("update_repo") or updater.DEFAULT_REPO)
+            except Exception as exc:
+                if not silent:
+                    self.log_threadsafe(f"Не удалось проверить обновления: {exc}")
+                return
+            self.root.after(0, lambda: self._on_update_found(upd, silent))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _on_update_found(self, upd, silent):
+        if upd is None:
+            if not silent:
+                self.log(f"У вас последняя версия ({__version__})")
+            return
+        first = self._update is None or self._update.version != upd.version
+        self._update = upd
+        self.update_btn.configure(text=f"⬆ ОБНОВИТЬ ДО {upd.version}")
+        self.update_btn.place(relx=1, x=-232, y=78, anchor="ne")
+        if first:
+            self.log(f"Доступна новая версия {upd.version} — нажмите «Обновить» в шапке")
+            if self.tg._creds()[0]:
+                self.tg.send(f"⬆ Доступна новая версия макроса {upd.version}. Обновить — кнопкой в программе",
+                             buttons=False)
+
+    def _do_update(self):
+        if self._updating:
+            return
+        if self._update is None:
+            self._check_update(silent=False)
+            return
+        if not updater.frozen():
+            self.log("Обновление из программы работает только в exe")
+            return
+        if self.engine.running:
+            self.log("Сначала остановите ловлю, потом обновляйтесь")
+            return
+        self._updating = True
+        upd = self._update
+        self.update_btn.configure(text="СКАЧИВАЮ…", state="disabled")
+        self.log(f"Скачиваю версию {upd.version}…")
+        shown = [0]
+
+        def progress(frac):
+            step = int(frac * 4)
+            if step > shown[0]:
+                shown[0] = step
+                self.log_threadsafe(f"Обновление: {step * 25}%")
+
+        def job():
+            try:
+                new = updater.download(upd, sys.executable + ".new", progress)
+            except Exception as exc:
+                self.log_threadsafe(f"Обновление не скачалось: {exc}")
+                self.root.after(0, self._update_failed)
+                return
+            self.root.after(0, lambda: self._install_update(new, upd))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _update_failed(self):
+        self._updating = False
+        if self._update:
+            self.update_btn.configure(text=f"⬆ ОБНОВИТЬ ДО {self._update.version}", state="normal")
+
+    def _install_update(self, new, upd):
+        self._save()
+        try:
+            updater.install(new)
+        except Exception as exc:
+            self.log(f"Не удалось установить обновление: {exc}")
+            self._update_failed()
+            return
+        self.log(f"Перезапуск в версии {upd.version}…")
+        self.root.after(300, self.exit)
 
     def exit(self):
         self.engine.stop()

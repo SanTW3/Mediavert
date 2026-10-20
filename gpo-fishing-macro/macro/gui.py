@@ -1042,7 +1042,8 @@ class App:
             "state": self._status_text,
             "catches": s.get("catches", 0),
             "casts": s.get("casts", 0),
-            "runtime": runtime // 10 * 10,  # с точностью до 10 с, чтобы не слать статус каждую секунду
+            # Точное время: панель досчитывает его сама. Округление до 10 с давало скачки назад
+            "runtime": runtime,
             "blackout": self.blackout.active,
             "alarm": alarms.reason if alarms.active else None,
             "fish": self.catch_log.status(),

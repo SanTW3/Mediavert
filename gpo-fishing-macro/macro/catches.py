@@ -462,51 +462,67 @@ class CatchLog:
             buf = io.BytesIO()
             self._draw(rows, 0.0).save(buf, "PNG")
             return buf.getvalue(), "png"
-        images = [self._draw(rows, i / frames).convert("P", palette=Image.ADAPTIVE, colors=255)
-                  for i in range(frames)]
+        # Одна палитра на все кадры и без дизеринга: у своей палитры на каждый кадр цвета
+        # «прыгали», а дизеринг давал зернистость
+        rgb = [self._draw(rows, i / frames) for i in range(frames)]
+        strip = Image.new("RGB", (rgb[0].width, rgb[0].height * 3))
+        for j, f in enumerate(rgb[::max(1, frames // 3)][:3]):
+            strip.paste(f, (0, rgb[0].height * j))
+        palette = strip.quantize(colors=255, method=Image.MEDIANCUT)
+        images = [f.quantize(palette=palette, dither=Image.Dither.NONE) for f in rgb]
         buf = io.BytesIO()
         images[0].save(buf, "GIF", save_all=True, append_images=images[1:], duration=90, loop=0)
         return buf.getvalue(), "gif"
 
+    SCALE = 1.5   # картинка 1080 px в ширину: в 720 px Telegram показывал гифку мыльной
+
     def _draw(self, rows, phase):
-        W, ROW, HEAD, PAD = 720, 84, 96, 18
+        S = self.SCALE
+
+        def k(v):
+            return int(round(v * S))
+        W, ROW, HEAD, PAD = k(720), k(84), k(96), k(18)
         H = HEAD + max(len(rows), 1) * ROW + PAD
         img = Image.new("RGBA", (W, H), theme._hex(theme.BG))
         d = ImageDraw.Draw(img)
         # Шапка: косая полоса и заголовок, как в окне макроса
-        d.polygon([(0, 14), (W * 0.56, 14), (W * 0.52, 70), (0, 70)], fill=(26, 155, 224, 255))
-        d.polygon([(0, 70), (W * 0.52, 70), (W * 0.517, 75), (0, 75)], fill=theme._hex(theme.HILITE))
-        theme._slanted_text(img, (20, 16), "УЛОВ", theme._font(40), (255, 255, 255, 255))
+        d.polygon([(0, k(14)), (W * 0.56, k(14)), (W * 0.52, k(70)), (0, k(70))], fill=(26, 155, 224, 255))
+        d.polygon([(0, k(70)), (W * 0.52, k(70)), (W * 0.517, k(75)), (0, k(75))], fill=theme._hex(theme.HILITE))
+        theme._slanted_text(img, (k(20), k(16)), "УЛОВ", theme._font(k(40)), (255, 255, 255, 255))
         total = sum(c.count for c in rows)
         value = sum(c.count * c.price for c in rows)
         kinds = f"{len(rows)} {plural(len(rows), ('вид', 'вида', 'видов'))}"
-        theme._slanted_text(img, (W * 0.57, 16), f"{total} шт · {kinds}", theme._font(22), theme._hex(theme.HILITE))
+        theme._slanted_text(img, (W * 0.57, k(16)), f"{total} шт · {kinds}", theme._font(k(22)),
+                            theme._hex(theme.HILITE))
         if value:
-            theme._slanted_text(img, (W * 0.57, 44), f"≈ {fmt_peli(value)} Peli", theme._font(20),
+            theme._slanted_text(img, (W * 0.57, k(44)), f"≈ {fmt_peli(value)} Peli", theme._font(k(20)),
                                 (255, 214, 90, 255))
-        name_font, small_font, count_font = theme._font(25), theme._font(15), theme._font(30)
+        name_font, small_font, count_font = theme._font(k(25)), theme._font(k(15)), theme._font(k(30))
         if not rows:
-            d.text((PAD, HEAD + 20), "Пока ничего не поймано", font=name_font, fill=theme._hex(theme.MUTED))
+            d.text((PAD, HEAD + k(20)), "Пока ничего не поймано", font=name_font, fill=theme._hex(theme.MUTED))
         for i, c in enumerate(rows):
             y = HEAD + i * ROW
-            d.polygon([(PAD + 10, y), (W - PAD, y), (W - PAD - 10, y + ROW - 8), (PAD, y + ROW - 8)],
+            d.polygon([(PAD + k(10), y), (W - PAD, y), (W - PAD - k(10), y + ROW - k(8)), (PAD, y + ROW - k(8))],
                       fill=theme._hex(theme.CARD), outline=theme._hex(theme.CARD_BORDER))
             # Квадрат иконки с рамкой цвета редкости — как в инвентаре игры
-            box = (PAD + 20, y + 6, PAD + 20 + ROW - 20, y + ROW - 14)
+            box = (PAD + k(20), y + k(6), PAD + k(20) + ROW - k(20), y + ROW - k(14))
             d.rectangle(box, fill=(79, 79, 79, 255))
-            self._frame(img, box, c.rarity, phase)
+            self._frame(img, box, c.rarity, phase, width=k(3))
             icon = c.icon.copy().convert("RGBA")
-            icon.thumbnail((box[2] - box[0] - 6, box[3] - box[1] - 6))
+            side = min(box[2] - box[0], box[3] - box[1]) - k(6)
+            scale = side / max(icon.width, icon.height)
+            icon = icon.resize((max(1, round(icon.width * scale)), max(1, round(icon.height * scale))),
+                               Image.LANCZOS)
             img.alpha_composite(icon, (box[0] + (box[2] - box[0] - icon.width) // 2,
                                        box[1] + (box[3] - box[1] - icon.height) // 2))
-            tx = box[2] + 18
-            self._rarity_text(img, (tx, y + 10), self.name_of(c), name_font, c.rarity, phase)
+            tx = box[2] + k(18)
+            self._rarity_text(img, (tx, y + k(10)), self.name_of(c), name_font, c.rarity, phase)
             title = fishdb.rarity_info(c.rarity)["title"]
             sub = title.upper() + (f"  ·  {fmt_peli(c.price)} Peli" if c.price else "")
-            d.text((tx, y + 44), sub, font=small_font, fill=theme._hex(theme.MUTED))
+            d.text((tx, y + k(44)), sub, font=small_font, fill=theme._hex(theme.MUTED))
             cnt = f"× {c.count}"
             tw = d.textlength(cnt, font=count_font)
-            d.text((W - PAD - 30 - tw, y + 20), cnt, font=count_font, fill=theme._hex(theme.HILITE))
+            d.text((W - PAD - k(30) - tw, y + k(20)), cnt, font=count_font, fill=theme._hex(theme.HILITE))
         return img.convert("RGB")
 
     @staticmethod
@@ -525,12 +541,12 @@ class CatchLog:
         ImageDraw.Draw(mask).text((0, 0), text, font=font, fill=255)
         img.paste(self._rainbow(mask.width, mask.height, phase), (int(xy[0]), int(xy[1])), mask)
 
-    def _frame(self, img, box, rarity, phase):
+    def _frame(self, img, box, rarity, phase, width=3):
         color = fishdb.rarity_info(rarity)["color"]
         if color != "rainbow":
-            ImageDraw.Draw(img).rectangle(box, outline=theme._hex(color), width=3)
+            ImageDraw.Draw(img).rectangle(box, outline=theme._hex(color), width=width)
             return
         x0, y0, x1, y1 = box
         mask = Image.new("L", (x1 - x0 + 1, y1 - y0 + 1), 0)
-        ImageDraw.Draw(mask).rectangle([0, 0, x1 - x0, y1 - y0], outline=255, width=3)
+        ImageDraw.Draw(mask).rectangle([0, 0, x1 - x0, y1 - y0], outline=255, width=width)
         img.paste(self._rainbow(mask.width, mask.height, phase), (x0, y0), mask)

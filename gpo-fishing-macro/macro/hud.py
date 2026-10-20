@@ -141,7 +141,7 @@ class Hud:
         font = self.font
         c.create_rectangle(x, y, x + PANEL_W, y + PANEL_H, fill="#06122b", outline="#5ecbff", width=1)
         c.create_rectangle(x, y, x + PANEL_W, y + 4, fill="#5ecbff", outline="")
-        c.create_text(x + 12, y + 18, anchor="w", text="GPO РЫБАЛКА", fill="#5ecbff", font=(font, 11, "bold"))
+        c.create_text(x + 12, y + 18, anchor="w", text="FISHPILOT", fill="#5ecbff", font=(font, 11, "bold"))
         status = str(data.get("status") or "").upper()
         c.create_text(x + PANEL_W - 10, y + 18, anchor="e", text=status[:22],
                       fill=STATUS_COLORS.get(data.get("color"), "#e6f1ff"), font=(font, 10, "bold"))

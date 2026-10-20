@@ -1,4 +1,4 @@
-"""Окно управления макросом (CustomTkinter): тёмная тема, карточки, вкладки как в оригинале."""
+"""Окно FishPilot (CustomTkinter): меню разделов слева, «Старт» и статус всегда на виду, карточки настроек."""
 import ctypes
 import os
 import queue
@@ -29,9 +29,9 @@ LLMHF_INJECTED = 0x01
 
 DIGITS = [str(d) for d in range(10)]
 
-# Палитра — морская тема в духе Persona 3 Reload (macro/theme.py)
+# Палитра — macro/theme.py
 from .theme import (ACCENT, ACCENT_HOVER, BG, CARD, CARD_BORDER, FIELD, GREEN, GREEN_HOVER,  # noqa: E402
-                    HILITE, MUTED, ORANGE, RED, RED_HOVER, TEXT, WARN_BG)
+                    HILITE, MUTED, ORANGE, RED, RED_HOVER, SIDEBAR, TEXT)
 from . import theme  # noqa: E402
 
 STATUS_COLORS = {"red": RED, "green": GREEN, "blue": ACCENT, "orange": ORANGE}
@@ -57,12 +57,6 @@ def key_name(key):
     if vk is not None and 0x30 <= vk <= 0x5A:
         return chr(vk).lower()
     return None
-
-
-def italic_pad(text):
-    """Наклонный текст шире прямого, а Tk меряет ширину по прямому — последний символ
-    обрезается справа. Пара пробелов в конце даёт запас под наклон."""
-    return f"{text}  "
 
 
 def fmt_point(p):
@@ -118,14 +112,13 @@ class App:
         self.events = queue.Queue()
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
-        # Резкие углы, как в меню P3R
-        for widget, radius in (("CTkButton", 2), ("CTkEntry", 2), ("CTkOptionMenu", 2),
-                               ("CTkSegmentedButton", 2), ("CTkTextbox", 2)):
+        for widget, radius in (("CTkButton", 6), ("CTkEntry", 6), ("CTkOptionMenu", 6),
+                               ("CTkSegmentedButton", 6), ("CTkTextbox", 6)):
             ctk.ThemeManager.theme[widget]["corner_radius"] = radius
         self.root = ctk.CTk(fg_color=BG)
-        self.root.title("GPO — макрос рыбалки")
-        self.root.geometry("600x760")
-        self.root.minsize(600, 600)  # шапка-картинка рассчитана на 600 px
+        self.root.title("FishPilot — автопилот рыбалки для GPO")
+        self.root.geometry("920x720")
+        self.root.minsize(840, 600)
         try:
             if sys.platform == "win32":
                 self.root.iconbitmap(resource("icon.ico"))
@@ -134,7 +127,7 @@ class App:
         # Узкий шрифт заголовков (Bahnschrift Condensed в Windows 10/11)
         global TK_TITLE
         self.display = theme.display_family(self.root)
-        TK_TITLE = (self.display, 12, "bold", "italic")
+        TK_TITLE = (FONT, 12, "bold")
         self.vars = {}
         self._save_job = None
         self._rebinding = None
@@ -144,6 +137,8 @@ class App:
         self._guide = None
         self._stats = {}
         self._was_running = None
+        self._check_rows = {}
+        self._page = None
 
         self.engine = MacroEngine(
             self.cfg,
@@ -212,6 +207,7 @@ class App:
 
     def _save(self):
         self._save_job = None
+        self._refresh_checklist()
         try:
             config.save(self.cfg)
         except OSError as exc:
@@ -219,11 +215,9 @@ class App:
 
     # ---------- строительные блоки ----------
     def _card(self, parent, title, subtitle=None):
-        card = ctk.CTkFrame(parent, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=4)
-        card.pack(fill="x", pady=(0, 10), padx=2)
-        # Заголовок карточки — как плашки меню P3R: курсив капсом и циановая черта слева
-        tk.Frame(card, bg=HILITE, width=4).place(x=1, y=13, width=4, height=20)
-        tk.Label(card, text=italic_pad(title.upper()), font=TK_TITLE, fg=HILITE, bg=CARD).pack(
+        card = ctk.CTkFrame(parent, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=8)
+        card.pack(fill="x", pady=(0, 10), padx=10)
+        tk.Label(card, text=title, font=TK_TITLE, fg=TEXT, bg=CARD).pack(
             anchor="w", padx=16, pady=(10, 0 if subtitle else 6))
         if subtitle:
             tk.Label(card, text=subtitle, font=TK_SUB, fg=MUTED, bg=CARD).pack(anchor="w", padx=16, pady=(0, 6))
@@ -251,8 +245,8 @@ class App:
         right.grid(row=row, column=1, sticky="e", pady=4)
         ctk.CTkEntry(right, width=width, textvariable=self.var(key, kind), fg_color=FIELD,
                      border_color=CARD_BORDER, justify="center").pack(side="left")
-        if unit:
-            tk.Label(right, text=unit, font=TK_LABEL, fg=MUTED, bg=CARD, width=3).pack(side="left", padx=(6, 0))
+        # Колонка единиц есть всегда — поля стоят ровно одно под другим
+        tk.Label(right, text=unit or "", font=TK_LABEL, fg=MUTED, bg=CARD, width=4).pack(side="left", padx=(6, 0))
 
     def _text(self, body, text, key, hint=None, secret=False):
         row = self._row(body)
@@ -314,144 +308,245 @@ class App:
         return frame
 
     # ---------- построение окна ----------
-    def _build(self):
-        root = self.root
-        # Шапка — картинка, нарисованная один раз (theme.render_banner), поверх неё статус и Start
-        banner = theme.render_banner(600, 110)
-        self._banner = ctk.CTkImage(banner, size=(600, 110))
-        header = ctk.CTkLabel(root, text="", image=self._banner, fg_color=BG, height=110)
-        header.pack(fill="x", pady=(0, 8))
-        self.status = ctk.CTkLabel(header, text="  ●  ОСТАНОВЛЕН  ", font=(self.display, 13, "bold", "italic"),
-                                   text_color="white", fg_color=RED, corner_radius=0, height=22)
-        self.status.place(x=22, y=70)
-        self.start_btn = ctk.CTkButton(header, text="▶  СТАРТ ", width=150, height=48, corner_radius=0,
-                                       font=(self.display, 20, "bold", "italic"), fg_color=GREEN,
-                                       hover_color=GREEN_HOVER, border_width=2, border_color=HILITE,
-                                       command=self.engine.toggle)
-        self.start_btn.place(relx=1, x=-20, y=26, anchor="ne")
-        ctk.CTkButton(header, text="?  ГАЙД", width=74, height=22, corner_radius=0, fg_color="#0b3478",
-                      hover_color=ACCENT, border_width=1, border_color=HILITE, text_color=HILITE,
-                      font=(self.display, 12, "bold", "italic"), command=self.open_guide).place(
-            relx=1, x=-150, y=78, anchor="ne")
-        # Появляется, когда на GitHub есть версия новее
-        self.update_btn = ctk.CTkButton(header, text="", width=150, height=22, corner_radius=0, fg_color=GREEN,
-                                        hover_color=GREEN_HOVER, border_width=1, border_color=HILITE,
-                                        text_color="white", font=(self.display, 12, "bold", "italic"),
-                                        command=self._do_update)
-        self.start_hint = ctk.CTkLabel(header, text="", font=(FONT, 11, "bold"), text_color=HILITE,
-                                       fg_color="#0b3478", corner_radius=0, height=18)
-        self.start_hint.place(relx=1, x=-20, y=78, anchor="ne")
+    PAGES = (("home", "🏠", "Главная"), ("setup", "🎯", "Настройка"), ("catch", "🐟", "Улов"),
+             ("phone", "📱", "Телефон"), ("auto", "🛒", "Автоматизация"), ("tune", "🔧", "Тонкая настройка"),
+             ("app", "⚙", "Программа"))
 
-        stats = ctk.CTkFrame(root, fg_color="transparent")
-        stats.pack(fill="x", padx=16, pady=(0, 8))
+    def _build(self):
+        """Слева — меню разделов и всегда видимые «Старт» и статус, справа — выбранный раздел."""
+        root = self.root
+        side = tk.Frame(root, bg=SIDEBAR, width=200)
+        side.pack(side="left", fill="y")
+        side.pack_propagate(False)
+        tk.Label(side, text="FISHPILOT", font=(self.display, 22, "bold"), fg=HILITE, bg=SIDEBAR).pack(
+            anchor="w", padx=18, pady=(18, 0))
+        tk.Label(side, text="автопилот рыбалки · GPO", font=TK_HINT, fg=MUTED, bg=SIDEBAR).pack(anchor="w", padx=18)
+
+        self.status = ctk.CTkLabel(side, text="●  Остановлен", font=(FONT, 12, "bold"), text_color="white",
+                                   fg_color=RED, corner_radius=12, height=26)
+        self.status.pack(fill="x", padx=16, pady=(16, 8))
+        self.start_btn = ctk.CTkButton(side, text="▶  Старт", height=46, corner_radius=8,
+                                       font=(self.display, 18, "bold"), fg_color=GREEN, hover_color=GREEN_HOVER,
+                                       command=self.engine.toggle)
+        self.start_btn.pack(fill="x", padx=16)
+        self.start_hint = tk.Label(side, text="", font=TK_HINT, fg=MUTED, bg=SIDEBAR)
+        self.start_hint.pack(pady=(3, 14))
+
+        self.nav_buttons = {}
+        for key, icon, title in self.PAGES:
+            btn = ctk.CTkButton(side, text=f"  {icon}   {title}", anchor="w", height=36, corner_radius=6,
+                                fg_color="transparent", hover_color=FIELD, text_color=TEXT,
+                                font=(FONT, 13), command=lambda k=key: self.show_page(k))
+            btn.pack(fill="x", padx=10, pady=1)
+            self.nav_buttons[key] = btn
+
+        bottom = tk.Frame(side, bg=SIDEBAR)
+        bottom.pack(side="bottom", fill="x", padx=16, pady=14)
+        # Появляется, когда на GitHub есть версия новее
+        self.update_btn = ctk.CTkButton(bottom, text="", height=30, corner_radius=6, fg_color=GREEN,
+                                        hover_color=GREEN_HOVER, font=(FONT, 11, "bold"), command=self._do_update)
+        self._update_btn_box = bottom
+        self._guide_btn = ctk.CTkButton(bottom, text="?  Гайд по настройке", height=30, corner_radius=6,
+                                        fg_color=FIELD, hover_color=ACCENT, font=(FONT, 11), command=self.open_guide)
+        self._guide_btn.pack(fill="x")
+        tk.Label(bottom, text=f"версия {__version__}", font=TK_HINT, fg=MUTED, bg=SIDEBAR).pack(pady=(6, 0))
+
+        self.content = tk.Frame(root, bg=BG)
+        self.content.pack(side="left", fill="both", expand=True)
+        self.pages = {}
+        builders = {"home": self._page_home, "setup": self._page_setup, "catch": self._page_catch,
+                    "phone": self._page_phone, "auto": self._page_auto, "tune": self._page_tune,
+                    "app": self._page_app}
+        for key, icon, title in self.PAGES:
+            frame = tk.Frame(self.content, bg=BG)
+            tk.Label(frame, text=title, font=(self.display, 20, "bold"), fg=TEXT, bg=BG).pack(
+                anchor="w", padx=22, pady=(16, 8))
+            self.pages[key] = frame
+            builders[key](frame)
+        self._refresh_hotkey_hint()
+        self._refresh_checklist()
+        self.show_page("home")
+
+    def show_page(self, key):
+        for k, frame in self.pages.items():
+            if k == key:
+                frame.pack(fill="both", expand=True)
+            else:
+                frame.pack_forget()
+        for k, btn in self.nav_buttons.items():
+            btn.configure(fg_color=ACCENT if k == key else "transparent",
+                          font=(FONT, 13, "bold") if k == key else (FONT, 13))
+        self._page = key
+
+    def _page_scroll(self, frame):
+        page = smooth_scrolling(ctk.CTkScrollableFrame(frame, fg_color="transparent",
+                                                       scrollbar_button_color=CARD_BORDER))
+        page.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        return page
+
+    # --- Главная: счётчики, готовность к ловле, журнал событий ---
+    def _page_home(self, frame):
+        stats = tk.Frame(frame, bg=BG)
+        stats.pack(fill="x", padx=18)
         self.stat_values = {}
         for i, (key, title) in enumerate((("catches", "Поймано"), ("casts", "Забросов"), ("runtime", "Время"),
-                                          ("rate", "Рыбы в час"))):
+                                          ("rate", "Рыб в час"))):
             stats.columnconfigure(i, weight=1, uniform="stats")
-            card = ctk.CTkFrame(stats, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=4)
-            card.grid(row=0, column=i, sticky="ew", padx=3)
-            tk.Frame(card, bg=HILITE, height=3).place(x=1, y=1, relwidth=0.35, height=3)
-            value = ctk.CTkLabel(card, text="0", font=(self.display, 26, "bold", "italic"), text_color=TEXT)
+            card = ctk.CTkFrame(stats, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=8)
+            card.grid(row=0, column=i, sticky="ew", padx=4)
+            value = ctk.CTkLabel(card, text="0", font=(self.display, 26, "bold"), text_color=TEXT)
             value.pack(pady=(8, 0))
-            ctk.CTkLabel(card, text=italic_pad(title.upper()), font=(self.display, 11, "italic"),
-                         text_color=HILITE).pack(pady=(0, 8))
+            ctk.CTkLabel(card, text=title, font=(FONT, 11), text_color=MUTED).pack(pady=(0, 8))
             self.stat_values[key] = value
 
-        tabs = ctk.CTkTabview(root, fg_color=BG, segmented_button_fg_color=CARD,
-                              segmented_button_selected_color=ACCENT,
-                              segmented_button_selected_hover_color=ACCENT_HOVER,
-                              segmented_button_unselected_color=CARD,
-                              segmented_button_unselected_hover_color=FIELD, corner_radius=4)
-        tabs._segmented_button.configure(font=(self.display, 14, "bold"), corner_radius=2)
-        tabs.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        for title, builder in (("Основное", self._tab_general), ("Заброс", self._tab_casting),
-                               ("Рыбалка", self._tab_fishing), ("Подготовка", self._tab_precast),
-                               ("Всё остальное", self._tab_else)):
-            builder(tabs.add(title))
-        self._refresh_hotkey_hint()
+        ready = ctk.CTkFrame(frame, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=8)
+        ready.pack(fill="x", padx=22, pady=(12, 0))
+        tk.Label(ready, text="Готовность к ловле", font=(FONT, 12, "bold"), fg=TEXT, bg=CARD).pack(
+            anchor="w", padx=14, pady=(10, 2))
+        self.checklist = tk.Frame(ready, bg=CARD)
+        self.checklist.pack(fill="x", padx=14, pady=(0, 10))
+        self.checklist.columnconfigure(1, weight=1)
+        self._check_rows = {}
+        items = (
+            ("area", "Область мини-игры", "Выбрать", self.change_area),
+            ("water", "Точка заброса", "Указать",
+             lambda: self.pick_point("water_point", "Кликните по воде, куда забрасывать удочку")),
+            ("rod", "Слот удочки", "Изменить", lambda: self.show_page("setup")),
+            ("catch", "Распознавание улова", "Проверить", self._test_catch),
+            ("tg", "Telegram", "Настроить", lambda: self.show_page("phone")),
+            ("alarm", "Будильник на телефон", "Тест", self._test_alarm),
+        )
+        for row, (key, title, action, command) in enumerate(items):
+            mark = tk.Label(self.checklist, text="●", font=(FONT, 13, "bold"), fg=MUTED, bg=CARD, width=2)
+            mark.grid(row=row, column=0, sticky="w")
+            box = tk.Frame(self.checklist, bg=CARD)
+            box.grid(row=row, column=1, sticky="w", pady=3)
+            tk.Label(box, text=title, font=TK_LABEL, fg=TEXT, bg=CARD).pack(anchor="w")
+            detail = tk.Label(box, text="", font=TK_HINT, fg=MUTED, bg=CARD)
+            detail.pack(anchor="w")
+            ctk.CTkButton(self.checklist, text=action, width=96, height=28, corner_radius=6, fg_color=FIELD,
+                          hover_color=ACCENT, border_color=CARD_BORDER, border_width=1,
+                          command=command).grid(row=row, column=2, sticky="e")
+            self._check_rows[key] = (mark, detail)
 
-    # --- General ---
-    def _tab_general(self, tab):
-        page = self._scroll(tab)
-        hk = self._card(page, "Горячие клавиши", "Работают везде, даже когда активно окно игры")
-        self.hotkey_labels = {}
-        for label, key in (("Старт / стоп", "hotkey_start_stop"), ("Выбрать область", "hotkey_change_area"),
-                           ("Выход", "hotkey_exit"), ("Экран выкл / вкл", "hotkey_blackout"),
-                           ("HUD вкл / выкл", "hotkey_hud")):
-            row = self._row(hk)
-            self._label(hk, row, label)
-            right = tk.Frame(hk, bg=CARD)
-            right.grid(row=row, column=1, sticky="e", pady=4)
-            cap = ctk.CTkLabel(right, text=self.cfg[key].upper(), width=56, height=30, corner_radius=2,
-                               fg_color=FIELD, text_color=ACCENT, font=(FONT, 13, "bold"))
-            cap.pack(side="left", padx=(0, 8))
-            ctk.CTkButton(right, text="Сменить", width=80, height=30, fg_color="transparent", border_width=1,
-                          border_color=CARD_BORDER, hover_color=FIELD,
-                          command=lambda k=key: self._rebind(k)).pack(side="left")
-            self.hotkey_labels[key] = cap
+        logbox = ctk.CTkFrame(frame, fg_color=CARD, border_color=CARD_BORDER, border_width=1, corner_radius=8)
+        logbox.pack(fill="both", expand=True, padx=22, pady=12)
+        tk.Label(logbox, text="Журнал событий", font=(FONT, 12, "bold"), fg=TEXT, bg=CARD).pack(
+            anchor="w", padx=14, pady=(10, 4))
+        self.log_box = ctk.CTkTextbox(logbox, fg_color=FIELD, font=("Consolas", 11), wrap="word", state="disabled")
+        self.log_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        win = self._card(page, "Окно")
-        self._switch(win, "Поверх всех окон", "always_on_top", command=self._apply_topmost)
-        self._switch(win, "HUD поверх игры", "hud_enabled",
-                     "Рамка области мини-игры и показатели, пока идёт ловля. Клавиша — в «Горячих клавишах»",
-                     command=lambda: self._tick_hud(once=True))
+    def _refresh_checklist(self):
+        """Галочки на «Главной»: что уже настроено, а что нет (зелёное — готово, оранжевое — надо сделать)."""
+        if not getattr(self, "_check_rows", None):
+            return
+        cfg = self.cfg
+        token = str(cfg.get("telegram_token") or "").strip()
+        chat = str(cfg.get("telegram_chat_id") or "").strip()
+        channels = alarm.channels(cfg)
+        area = cfg.get("catch_area")
+        states = {
+            "area": (bool(cfg.get("area")), self._area_text() if cfg.get("area")
+                     else f"Не выбрана — во время мини-игры нажмите {cfg['hotkey_change_area'].upper()}"),
+            "water": (bool(cfg.get("water_point")), fmt_point(cfg.get("water_point")) if cfg.get("water_point")
+                      else "Не указана — кликните по воде"),
+            "rod": (True, f"Удочка в слоте {cfg['rod_hotkey']}, другой слот {cfg['other_hotkey']}"),
+            "catch": (bool(cfg.get("catch_log_enabled")),
+                      ("Своя область уведомления" if area else "Авто: центр окна Roblox")
+                      if cfg.get("catch_log_enabled") else "Выключено — включите в разделе «Улов»"),
+            "tg": (bool(token and chat), "Бот подключён" if token and chat else "Не настроен — нужен свой бот"),
+            "alarm": (bool(channels and cfg.get("alarm_enabled")),
+                      ", ".join(channels) if channels else "Ни одного канала — настройте в разделе «Телефон»"),
+        }
+        for key, (ok, text) in states.items():
+            mark, detail = self._check_rows[key]
+            mark.configure(text="✓" if ok else "●", fg=GREEN if ok else ORANGE)
+            detail.configure(text=text)
 
-        up = self._card(page, "Обновления", f"Сейчас версия {__version__}")
-        self._switch(up, "Проверять при запуске", "auto_update",
-                     "Новая версия скачивается с GitHub прямо в программу, настройки и улов остаются")
-        self._buttons(up, ("Проверить сейчас", lambda: self._check_update(silent=False), ACCENT, ACCENT_HOVER),
-                      ("Обновить", self._do_update, FIELD, CARD_BORDER))
+    # --- Настройка: главное по шагам ---
+    def _page_setup(self, frame):
+        page = self._page_scroll(frame)
+        c = self._card(page, "1. Область мини-игры",
+                       "Поймайте рыбу вручную и во время мини-игры выделите рамкой обе полосы")
+        self.area_label = tk.Label(c, text=self._area_text(), font=TK_LABEL, bg=CARD,
+                                   fg=GREEN if self.cfg["area"] else MUTED)
+        self.area_label.grid(row=self._row(c), column=0, columnspan=2, sticky="w", pady=(0, 2))
+        self._buttons(c, ("Выбрать область", self.change_area, ACCENT, ACCENT_HOVER),
+                      ("Что видит макрос", self._open_preview, FIELD, CARD_BORDER))
 
-        bo = self._card(page, "Чёрный экран во время рыбалки",
-                        "Вы видите чёрный экран, а макрос по-прежнему видит игру")
-        self._switch(bo, "Гасить экран после старта", "blackout_enabled",
-                     "Вернуть: любая клавиша или кнопка мыши, горячая клавиша или кнопка в Telegram")
-        self._switch(bo, "Все мониторы", "blackout_all_monitors", "Выкл — только монитор с Roblox")
-        self._num(bo, "Задержка перед затемнением", "blackout_delay", "После нажатия «Старт»", unit="с")
+        c = self._card(page, "2. Заброс", "Куда и как долго забрасывать удочку")
+        self._point(c, "Указать точку воды", "water_point", "Кликните по воде, куда забрасывать удочку")
+        self._num(c, "Удержание при забросе", "cast_hold", "Сколько держать ЛКМ при забросе", unit="с")
+        self._num(c, "Перезаброс через", "recast_timeout", "Если за это время не клюнуло", unit="с")
 
-        nh = self._card(page, "Слоты предметов", "Номера слотов на панели в игре")
-        self._option(nh, "Слот удочки", "rod_hotkey", DIGITS, "Где лежит удочка")
-        self._option(nh, "Любой другой слот", "other_hotkey", DIGITS,
+        c = self._card(page, "3. Слоты предметов", "Номера слотов на панели в игре")
+        self._option(c, "Слот удочки", "rod_hotkey", DIGITS, "Где лежит удочка")
+        self._option(c, "Любой другой слот", "other_hotkey", DIGITS,
                      "Нажимается перед удочкой, чтобы удочка точно оказалась в руках")
 
-    # --- Casting ---
-    def _tab_casting(self, tab):
-        page = self._scroll(tab)
-        wp = self._card(page, "Точка воды", "Куда целится курсор при забросе")
-        self._point(wp, "Указать точку воды", "water_point", "Кликните по воде, куда забрасывать удочку")
-        ct = self._card(page, "Время заброса")
-        self._num(ct, "Удержание при забросе", "cast_hold", "Сколько держать ЛКМ при забросе", unit="с")
-        self._num(ct, "Перезаброс через", "recast_timeout", "Если за это время не клюнуло", unit="с")
-
-    # --- Fishing ---
-    def _tab_fishing(self, tab):
-        page = self._scroll(tab)
-        pd = self._card(page, "PD-регулятор", "Держит вашу тёмную полосу на белой черте рыбы")
-        self._num(pd, "Kp (пропорциональный)", "kp", "Насколько сильно тянуть полосу к рыбе")
-        self._num(pd, "Kd (дифференциальный)", "kd", "Гашение: увеличьте, если полоса проскакивает рыбу")
-        self._num(pd, "Ограничение PD", "pd_clamp", "Предел выхода регулятора")
-        cl = self._card(page, "Журнал улова", "Список пойманной рыбы с иконками — кнопка «🐟 Улов» в Telegram")
-        self._switch(cl, "Вести журнал улова", "catch_log_enabled",
-                     "После каждой мини-игры снимает уведомление о рыбе и читает название (Windows OCR)")
-        row = self._row(cl)
-        self._label(cl, row, "Область уведомления", "Где игра пишет, какая рыба поймана (иконка + название)")
-        self.catch_area_label = tk.Label(cl, text=self._catch_area_text(), font=TK_LABEL, bg=CARD,
+        c = self._card(page, "4. Уведомление о пойманной рыбе",
+                       "Макрос читает надпись «New Item <рыба>» и ведёт список улова")
+        row = self._row(c)
+        self._label(c, row, "Область уведомления", "Где игра пишет, какая рыба поймана")
+        self.catch_area_label = tk.Label(c, text=self._catch_area_text(), font=TK_LABEL, bg=CARD,
                                          fg=GREEN if self.cfg["catch_area"] else HILITE)
         self.catch_area_label.grid(row=row, column=1, sticky="e", pady=4)
-        self._num(cl, "Снимок через", "catch_capture_delay",
-                  "Сколько ждать после конца мини-игры, пока появится уведомление", unit="с")
-        self._switch(cl, "Сообщать о каждой рыбе", "catch_notify_each", "Присылать в Telegram каждую поимку")
-        self._buttons(cl, ("Выбрать область", self._pick_catch_area, ACCENT, ACCENT_HOVER),
+        self._buttons(c, ("Выбрать область", self._pick_catch_area, ACCENT, ACCENT_HOVER),
                       ("Проверить сейчас", self._test_catch, FIELD, CARD_BORDER))
-        self._buttons(cl, ("Отправить улов", self._send_catches, FIELD, CARD_BORDER),
-                      ("Очистить", self._clear_catches, FIELD, CARD_BORDER))
-        self._fish_catalog_card(page)
-        tm = self._card(page, "Тайминги")
-        self._num(tm, "Пауза после рыбы", "fish_end_delay", "Ожидание после конца мини-игры", unit="с")
 
-    # --- Pre-Cast ---
-    def _tab_precast(self, tab):
-        page = self._scroll(tab)
+    # --- Улов ---
+    def _page_catch(self, frame):
+        page = self._page_scroll(frame)
+        c = self._card(page, "Список улова", "Что и сколько поймано — кнопка «🐟 Улов» в Telegram")
+        self._switch(c, "Вести список улова", "catch_log_enabled",
+                     "После каждой мини-игры читает название рыбы из уведомления игры")
+        self._switch(c, "Сообщать о каждой рыбе", "catch_notify_each", "Присылать в Telegram каждую поимку")
+        self._buttons(c, ("Отправить в Telegram", self._send_catches, ACCENT, ACCENT_HOVER),
+                      ("Очистить список", self._clear_catches, FIELD, CARD_BORDER))
+        self._fish_catalog_card(page)
+
+    # --- Телефон: Telegram, мини-приложение, будильник ---
+    def _page_phone(self, frame):
+        page = self._page_scroll(frame)
+        c = self._card(page, "Telegram-бот", "Сообщения, скриншоты, кнопки управления и список улова")
+        self._text(c, "Токен бота", "telegram_token", "От @BotFather, у каждого свой бот", secret=True)
+        self._text(c, "Ваш chat id", "telegram_chat_id", "Напишите боту /start и нажмите «Узнать chat id»")
+        self._buttons(c, ("Узнать chat id", self._find_chat_id, FIELD, CARD_BORDER),
+                      ("Проверить Telegram", self._check_tg, ACCENT, ACCENT_HOVER))
+        self._switch(c, "Кнопки управления в боте", "tg_control",
+                     "Экран, скриншот, статус, улов, стоп. Меню — команда /menu")
+        self._switch(c, "Скриншот к тревоге", "alarm_screenshot")
+
+        c = self._card(page, "Мини-приложение", "Живая панель в Telegram: статистика, старт/стоп, экран, улов")
+        self._switch(c, "Включить мини-приложение", "remote_enabled",
+                     "Кнопка «Панель» в чате с ботом. Связь через публичные серверы, всё подписано секретом")
+        self._buttons(c, ("Отправить панель", lambda: self._on_tg("panel"), ACCENT, ACCENT_HOVER),
+                      ("Новая ссылка", self._new_secret, FIELD, CARD_BORDER))
+
+        c = self._card(page, "Будильник", "Звонит на телефон, если что-то пошло не так")
+        self._switch(c, "Звонить при проблемах", "alarm_enabled")
+        self._num(c, "Повторять тревогу", "alarm_repeat_sec", "Пока не нажмёте «Стоп тревоги» (0 — один раз)",
+                  unit="с")
+        self._buttons(c, ("Тест тревоги", self._test_alarm, ACCENT, ACCENT_HOVER),
+                      ("Стоп тревоги", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
+
+        c = self._card(page, "Когда звонить")
+        self._num(c, "Забросов без поклёвки подряд", "wd_failed_casts",
+                  "Кончилась наживка, дисконнект или сдвинули персонажа (0 — выкл)", kind=int)
+        self._num(c, "Нет рыбы дольше", "wd_no_catch_min", "Ни одной рыбы за это время (0 — выкл)", unit="мин")
+        self._switch(c, "Следить за окном Roblox", "wd_check_window", "Игра закрылась или окно свёрнуто")
+        self._num(c, "Окно Roblox потеряно дольше", "wd_window_grace_sec", unit="с")
+        self._switch(c, "Останавливать ловлю при тревоге", "wd_stop_on_alarm")
+
+        c = self._card(page, "Настоящий звонок", "Telegram пишет сообщение, а эти приложения умеют звонить")
+        self._text(c, "ntfy: тема", "ntfy_topic", "Та же тема, что в приложении ntfy")
+        self._text(c, "ntfy: сервер", "ntfy_server")
+        self._text(c, "Pushover: user key", "pushover_user", secret=True)
+        self._text(c, "Pushover: app token", "pushover_token", secret=True)
+
+    # --- Автоматизация: наживка и фрукты ---
+    def _page_auto(self, frame):
+        page = self._page_scroll(frame)
 
         def section(flag_key, title, hint, build):
             card = self._card(page, title, hint)
@@ -475,10 +570,12 @@ class App:
             self._point(f, "Левая точка", "buy_left", "Кликните по левой кнопке покупки")
             self._point(f, "Средняя точка", "buy_middle", "Кликните по средней кнопке покупки")
             self._point(f, "Правая точка", "buy_right", "Кликните по правой кнопке покупки")
-            self._num(f, "Циклов на покупку", "loops_per_purchase", "Покупать наживку каждые N циклов", kind=int)
-            self._switch(f, "Вводить количество", "buy_type_amount", "Вписывает «циклов на покупку» после первого клика по средней точке")
+            self._num(f, "Покупать каждые", "loops_per_purchase", "Сколько циклов между покупками",
+                      kind=int, unit="цикл")
+            self._switch(f, "Вводить количество", "buy_type_amount",
+                         "Вписывает число циклов после первого клика по средней точке")
             self._switch(f, "Не покупать при старте", "buy_skip_first",
-                         "Первая покупка — только через «Циклов на покупку», а не сразу после старта")
+                         "Первая покупка — только через заданное число циклов")
 
         def fruit(f):
             self._option(f, "Слот фрукта", "fruit_hotkey", DIGITS)
@@ -487,20 +584,18 @@ class App:
         def bait(f):
             self._point(f, "Точка наживки", "bait_point", "Кликните по верхней наживке в списке")
 
-        section("auto_buy_bait", "Автопокупка наживки", "Встаньте рядом с продавцом наживки", buy)
-        section("auto_store_fruit", "Автосохранение фрукта", "Убирает выловленные дьявольские фрукты в хранилище", fruit)
-        section("auto_select_bait", "Выбор верхней наживки", "Кликает верхнюю наживку перед каждым забросом", bait)
+        section("auto_buy_bait", "Покупка наживки", "Встаньте рядом с продавцом наживки", buy)
+        section("auto_store_fruit", "Фрукты в хранилище", "Убирает выловленные дьявольские фрукты", fruit)
+        section("auto_select_bait", "Верхняя наживка", "Выбирает верхнюю наживку перед каждым забросом", bait)
 
-    # --- Literally Everything Else ---
-    def _tab_else(self, tab):
-        warn = ctk.CTkFrame(tab, fg_color=WARN_BG, border_color=RED, border_width=1, corner_radius=2)
-        warn.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(warn, text="⚠  НЕ МЕНЯЙТЕ, ЕСЛИ НЕ ЗНАЕТЕ, ЧТО ДЕЛАЕТЕ ",
-                     font=(FONT, 13, "bold"), text_color="#ff7b72").pack(padx=12, pady=8)
-        # Подразделы: в каждом немного карточек — прокрутка короче и не тормозит
-        groups = ["Задержки", "Античит и PD", "Будильник", "Распознавание", "Журнал"]
+    # --- Тонкая настройка: всё, что обычно трогать не нужно ---
+    def _page_tune(self, frame):
+        note = tk.Label(frame, text="Значения по умолчанию подходят большинству. Меняйте, если что-то работает не так.",
+                        font=TK_HINT, fg=ORANGE, bg=BG)
+        note.pack(anchor="w", padx=22, pady=(0, 6))
+        groups = ["Мини-игра", "Распознавание", "Задержки", "Античит"]
         pages = {}
-        holder = ctk.CTkFrame(tab, fg_color="transparent")
+        holder = tk.Frame(frame, bg=BG)
 
         def show(name):
             for n, p in pages.items():
@@ -509,107 +604,30 @@ class App:
                 else:
                     p.pack_forget()
 
-        nav = ctk.CTkSegmentedButton(tab, values=groups, command=show, fg_color=CARD,
+        nav = ctk.CTkSegmentedButton(frame, values=groups, command=show, fg_color=CARD,
                                      selected_color=ACCENT, selected_hover_color=ACCENT_HOVER,
                                      unselected_color=CARD, unselected_hover_color=FIELD)
-        nav.pack(fill="x", pady=(0, 8))
-        holder.pack(fill="both", expand=True)
+        nav.pack(fill="x", padx=22, pady=(0, 8))
+        holder.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         for name in groups:
             pages[name] = smooth_scrolling(ctk.CTkScrollableFrame(holder, fg_color="transparent",
                                                                   scrollbar_button_color=CARD_BORDER))
 
-        page = pages["Задержки"]
-        f = self._card(page, "Фокус окна Roblox")
-        self._num(f, "Задержка фокуса (с)", "focus_delay",
-                  "Ожидание после переключения на окно Roblox")
-        self._num(f, "Доп. задержка после фокуса (с)", "post_focus_delay",
-                  "Дополнительная пауза для стабильности")
-
-        f = self._card(page, "Задержки покупки наживки")
-        self._num(f, "После нажатия E (с)", "buy_e_delay", "Ожидание открытия магазина")
-        self._num(f, "Между кликами (с)", "buy_click_delay", "Пауза между кликами при покупке")
-        self._num(f, "После ввода числа (с)", "buy_type_delay", "Ожидание после ввода количества наживки")
-        self._num(f, "Микрозадержка мыши (с)", "micro_delay",
-                  "Крошечная пауза при движении мыши против детекта Roblox (0.05 = 50 мс)")
-
-        f = self._card(page, "Задержки сохранения фрукта")
-        self._num(f, "После клавиши фрукта (с)", "fruit_hotkey_delay", "Ожидание после нажатия слота фрукта")
-        self._num(f, "После клика Store (с)", "fruit_store_delay", "Ожидание после клика по точке Store")
-        self._num(f, "После первого Shift (с)", "fruit_shift_delay", "Ожидание после первого нажатия Shift")
-        self._num(f, "После Backspace (с)", "fruit_backspace_delay", "Ожидание после нажатия Backspace")
-
-        f = self._card(page, "Задержка выбора наживки")
-        self._num(f, "После клика по наживке (с)", "bait_click_delay", "Ожидание после клика по точке наживки")
-
-        f = self._card(pages["Античит и PD"], "Чёрный экран античита")
-        self._num(f, "Порог чёрного экрана", "black_threshold",
-                  "Доля окна Roblox, которая должна стать чёрной (0.85 = 85%, 0 — выключить)")
-        self._num(f, "Пауза между нажатиями (с)", "black_spam_delay",
-                  "Как часто жать клавишу, чтобы убрать чёрный экран")
-        self._num(f, "Клавиша", "black_spam_key", "Какую клавишу жать (space, e, enter, 1…)", kind=str)
-        self._num(f, "Тревога через (с)", "black_max_sec",
-                  "Позвонить, если чёрный экран не ушёл за это время")
-
-        f = self._card(page, "Задержки рыбалки")
-        self._num(f, "Выбор удочки (с)", "rod_select_delay",
-                  "Пауза между нажатиями слотов при выборе удочки")
-        self._num(f, "После движения курсора (с)", "cursor_delay",
-                  "Крошечная пауза после перемещения курсора (0.05 = 50 мс)")
-        self._num(f, "Период сканирования (с)", "scan_loop_delay",
-                  "Пауза между проверками экрана в ожидании поклёвки (меньше — быстрее, но больше нагрузка)")
-
-        page = pages["Античит и PD"]
-        f = self._card(page, "Гашение PD (продвинутое)")
-        self._num(f, "Множитель при сближении", "approach_damping",
-                  "Тормоз, когда полоса едет К рыбе (больше — сильнее тормоз)")
-        self._num(f, "Множитель при погоне", "chase_damping",
-                  "Гашение, когда рыба уходит ОТ полосы")
-        self._num(f, "Множитель разрыва", "gap_mult",
-                  "Склейка тёмно-серой полосы: допуск = высота белой черты × множитель")
-
-        f = self._card(page, "Синхронизация кнопки")
-        self._num(f, "Повтор состояния (с)", "resend_interval",
-                  "Повторять нажатие/отпускание ЛКМ, если состояние не менялось (против рассинхрона)")
-
-        page = pages["Будильник"]
-        al = self._card(page, "Будильник", "Звонит на телефон, если что-то пошло не так")
-        self._switch(al, "Звонить на телефон", "alarm_enabled", "Когда что-то пошло не так (см. «Сторож»)")
-        self._text(al, "Сервер ntfy", "ntfy_server")
-        self._text(al, "Тема ntfy", "ntfy_topic", "Та же тема, что в приложении ntfy")
-        self._text(al, "Токен Telegram-бота", "telegram_token", secret=True)
-        self._text(al, "Chat id в Telegram", "telegram_chat_id", "Ваш id, не бота: «Узнать chat id» найдёт его сам")
-        self._buttons(al, ("Проверить Telegram", self._check_tg, ACCENT, ACCENT_HOVER),
-                      ("Узнать chat id", self._find_chat_id, FIELD, CARD_BORDER))
-        self._text(al, "Pushover: user key", "pushover_user", secret=True)
-        self._text(al, "Pushover: app token", "pushover_token", secret=True)
-        self._num(al, "Повторять тревогу (с)", "alarm_repeat_sec",
-                  "Пока не нажмёте «Стоп тревоги» или «Старт» (0 = один раз)")
-        self._switch(al, "Прикладывать скриншот (Telegram)", "alarm_screenshot")
-        self._switch(al, "Кнопки управления в Telegram", "tg_control",
-                     "Кнопки бота: экран, скриншот, статус, стоп. Меню — команда /menu")
-
-        ma = self._card(page, "Мини-приложение Telegram", "Живая панель в Telegram: статистика, старт/стоп, экран, тревога")
-        self._switch(ma, "Включить мини-приложение", "remote_enabled",
-                     "Статус и команды идут через ntfy под секретным именем темы")
-        self._text(ma, "Адрес мини-приложения", "webapp_url", "Страница на GitHub Pages")
-        self._buttons(ma, ("Отправить панель", lambda: self._on_tg("panel"), ACCENT, ACCENT_HOVER),
-                      ("Новая ссылка", self._new_secret, FIELD, CARD_BORDER))
-        self._buttons(al, ("Тест тревоги", self._test_alarm, ACCENT, ACCENT_HOVER),
-                      ("Стоп тревоги", self.engine.alarms.acknowledge, FIELD, CARD_BORDER))
-
-        wd = self._card(page, "Сторож", "Когда звонить")
-        self._num(wd, "Забросов без поклёвки подряд", "wd_failed_casts",
-                  "Кончилась наживка, дисконнект или сдвинули персонажа (0 = выкл)", kind=int)
-        self._num(wd, "Нет рыбы дольше (мин)", "wd_no_catch_min", "Ни одной рыбы за это время (0 = выкл)")
-        self._num(wd, "Окно Roblox потеряно (с)", "wd_window_grace_sec",
-                  "Roblox закрыт или не активен дольше (вылет, окно свёрнуто)")
-        self._switch(wd, "Следить за окном Roblox", "wd_check_window")
-        self._switch(wd, "Останавливать макрос при тревоге", "wd_stop_on_alarm")
+        page = pages["Мини-игра"]
+        f = self._card(page, "Как полоса гонится за рыбой", "PD-регулятор держит вашу полосу на белой черте рыбы")
+        self._num(f, "Сила притяжения (Kp)", "kp", "Насколько сильно тянуть полосу к рыбе")
+        self._num(f, "Гашение (Kd)", "kd", "Увеличьте, если полоса проскакивает рыбу")
+        self._num(f, "Ограничение", "pd_clamp", "Предел выхода регулятора")
+        self._num(f, "Тормоз при сближении", "approach_damping", "Когда полоса едет к рыбе (больше — сильнее)")
+        self._num(f, "Гашение при погоне", "chase_damping", "Когда рыба уходит от полосы")
+        self._num(f, "Повтор нажатия ЛКМ", "resend_interval",
+                  "Повторять нажатие, если оно не менялось — против «потерянной» кнопки", unit="с")
+        self._num(f, "Пауза после рыбы", "fish_end_delay", "Ожидание после конца мини-игры", unit="с")
 
         page = pages["Распознавание"]
-        dt = self._card(page, "Распознавание мини-игры")
+        dt = self._card(page, "Распознавание мини-игры", "Если мини-игра не находится — смотрите «Что видит макрос»")
         row = self._row(dt)
-        self._label(dt, row, "Цвет трека (синий)", "Нажмите «Взять» и кликните по синему треку")
+        self._label(dt, row, "Цвет трека", "Нажмите «Взять» и кликните по синему треку")
         right = tk.Frame(dt, bg=CARD)
         right.grid(row=row, column=1, sticky="e", pady=4)
         self.color_swatch = ctk.CTkLabel(right, text="", width=70, height=28, corner_radius=6)
@@ -618,28 +636,85 @@ class App:
                       command=self._pick_color).pack(side="left")
         self._update_swatch()
         self._num(dt, "Допуск цвета", "zone_tolerance", "Насколько пиксель может отличаться от цвета трека", kind=int)
-        self._num(dt, "Яркость тёмно-серого", "dark_max", "Самый яркий пиксель, который ещё считается полосой игрока",
-                  kind=int)
         self._option(dt, "Полоса игрока", "bar_mode", ["dark", "blue"],
                      "dark — тёмно-серая на синем треке (обычно), blue — наоборот")
-        self._switch(dt, "Требовать зелёную полосу", "require_progress",
-                     "Мини-игра засчитывается, только если рядом зелёная полоса прогресса (против ложного спама ЛКМ)")
-        self._num(dt, "Яркость черты рыбы", "fish_white_min", "Минимальная яркость белой черты (0–255)",
+        self._num(dt, "Яркость тёмной полосы", "dark_max", "Самый яркий пиксель, который ещё считается полосой",
                   kind=int)
-        self._num(dt, "Мин. пикселей трека", "min_zone_pixels", "Меньше синих пикселей — мини-игры на экране нет", kind=int)
-        self._num(dt, "Частота в мини-игре (FPS)", "scan_fps", "Проверок экрана в секунду во время вываживания", kind=int)
-        self.area_label = tk.Label(dt, text=self._area_text(), font=TK_LABEL, bg=CARD,
-                                   fg=GREEN if self.cfg["area"] else MUTED)
-        self.area_label.grid(row=self._row(dt), column=0, columnspan=2, sticky="w", pady=(6, 0))
-        self._buttons(dt, ("Выбрать область", self.change_area, ACCENT, ACCENT_HOVER),
-                      ("Окно отладки", self._open_preview, FIELD, CARD_BORDER))
+        self._num(dt, "Склейка полосы", "gap_mult", "Белая черта рвёт полосу: допуск = высота черты × это число")
+        self._num(dt, "Яркость черты рыбы", "fish_white_min", "Минимальная яркость белой черты (0–255)", kind=int)
+        self._switch(dt, "Требовать зелёную полосу", "require_progress",
+                     "Мини-игра засчитывается, только если видна полоса прогресса (против ложных кликов)")
+        self._num(dt, "Мин. пикселей трека", "min_zone_pixels", "Меньше — мини-игры на экране нет", kind=int)
+        self._num(dt, "Проверок в секунду", "scan_fps", "Во время мини-игры", kind=int)
+        self._buttons(dt, ("Что видит макрос", self._open_preview, ACCENT, ACCENT_HOVER))
+        f = self._card(page, "Уведомление о рыбе")
+        self._num(f, "Снимать через", "catch_capture_delay", "После конца мини-игры", unit="с")
 
-        lg = self._card(pages["Журнал"], "Журнал")
-        self.log_box = ctk.CTkTextbox(lg, height=330, fg_color=FIELD, font=("Consolas", 11), wrap="word",
-                                      state="disabled")
-        self.log_box.grid(row=0, column=0, columnspan=2, sticky="ew")
-        nav.set("Задержки")
-        show("Задержки")
+        page = pages["Задержки"]
+        f = self._card(page, "Окно Roblox")
+        self._num(f, "После переключения", "focus_delay", unit="с")
+        self._num(f, "Дополнительно", "post_focus_delay", "Пауза для стабильности", unit="с")
+        f = self._card(page, "Рыбалка")
+        self._num(f, "Между слотами при выборе удочки", "rod_select_delay", unit="с")
+        self._num(f, "После движения курсора", "cursor_delay", unit="с")
+        self._num(f, "Проверка поклёвки каждые", "scan_loop_delay", "Меньше — быстрее, но больше нагрузка", unit="с")
+        self._num(f, "Микропауза мыши", "micro_delay", "Против детекта Roblox (0.05 = 50 мс)", unit="с")
+        f = self._card(page, "Покупка наживки")
+        self._num(f, "После E", "buy_e_delay", "Ожидание открытия магазина", unit="с")
+        self._num(f, "Между кликами", "buy_click_delay", unit="с")
+        self._num(f, "После ввода числа", "buy_type_delay", unit="с")
+        f = self._card(page, "Фрукты и наживка")
+        self._num(f, "После слота фрукта", "fruit_hotkey_delay", unit="с")
+        self._num(f, "После клика Store", "fruit_store_delay", unit="с")
+        self._num(f, "После Shift", "fruit_shift_delay", unit="с")
+        self._num(f, "После Backspace", "fruit_backspace_delay", unit="с")
+        self._num(f, "После клика по наживке", "bait_click_delay", unit="с")
+
+        page = pages["Античит"]
+        f = self._card(page, "Чёрный экран античита", "Если игра затемнила экран, макрос жмёт клавишу, пока он не уйдёт")
+        self._num(f, "Порог", "black_threshold",
+                  "Доля окна Roblox, которая должна стать чёрной (0.85 = 85%, 0 — выключить)")
+        self._num(f, "Клавиша", "black_spam_key", "space, e, enter, 1…", kind=str)
+        self._num(f, "Жать каждые", "black_spam_delay", unit="с")
+        self._num(f, "Тревога через", "black_max_sec", "Если чёрный экран не ушёл", unit="с")
+        nav.set("Мини-игра")
+        show("Мини-игра")
+
+    # --- Программа: клавиши, окно, экран, обновления ---
+    def _page_app(self, frame):
+        page = self._page_scroll(frame)
+        hk = self._card(page, "Горячие клавиши", "Работают везде, даже когда активно окно игры")
+        self.hotkey_labels = {}
+        for label, key in (("Старт / стоп", "hotkey_start_stop"), ("Выбрать область мини-игры", "hotkey_change_area"),
+                           ("Погасить / включить экран", "hotkey_blackout"), ("HUD вкл / выкл", "hotkey_hud"),
+                           ("Закрыть программу", "hotkey_exit")):
+            row = self._row(hk)
+            self._label(hk, row, label)
+            right = tk.Frame(hk, bg=CARD)
+            right.grid(row=row, column=1, sticky="e", pady=4)
+            cap = ctk.CTkLabel(right, text=self.cfg[key].upper(), width=56, height=30, corner_radius=6,
+                               fg_color=FIELD, text_color=ACCENT, font=(FONT, 13, "bold"))
+            cap.pack(side="left", padx=(0, 8))
+            ctk.CTkButton(right, text="Сменить", width=80, height=30, fg_color="transparent", border_width=1,
+                          border_color=CARD_BORDER, hover_color=FIELD,
+                          command=lambda k=key: self._rebind(k)).pack(side="left")
+            self.hotkey_labels[key] = cap
+
+        c = self._card(page, "Экран")
+        self._switch(c, "Окно программы поверх всех", "always_on_top", command=self._apply_topmost)
+        self._switch(c, "HUD поверх игры", "hud_enabled",
+                     "Рамка области и показатели над Roblox, пока идёт ловля",
+                     command=lambda: self._tick_hud(once=True))
+        self._switch(c, "Гасить экран после старта", "blackout_enabled",
+                     "Вы видите чёрный экран, а макрос — игру. Вернуть: любая клавиша или мышь")
+        self._switch(c, "Гасить все мониторы", "blackout_all_monitors", "Выкл — только монитор с Roblox")
+        self._num(c, "Гасить через", "blackout_delay", "После «Старт»", unit="с")
+
+        c = self._card(page, "Обновления", f"Сейчас версия {__version__}")
+        self._switch(c, "Проверять при запуске", "auto_update",
+                     "Новая версия скачивается прямо в программу, настройки и улов остаются")
+        self._buttons(c, ("Проверить сейчас", lambda: self._check_update(silent=False), ACCENT, ACCENT_HOVER),
+                      ("Обновить", self._do_update, FIELD, CARD_BORDER))
 
     # ---------- действия ----------
     def _apply_topmost(self):
@@ -776,7 +851,8 @@ class App:
         self.hotkey_labels[key].configure(text="...", text_color=ORANGE)
 
     def _refresh_hotkey_hint(self):
-        self.start_hint.configure(text=f"  ИЛИ КЛАВИША {self.cfg['hotkey_start_stop'].upper()}  ")
+        self.start_hint.configure(text=f"или клавиша {self.cfg['hotkey_start_stop'].upper()}")
+        self._refresh_checklist()
 
     def log_threadsafe(self, text):
         self.events.put(("log", text))
@@ -908,7 +984,7 @@ class App:
                               font=(self.display, 12, "bold")).pack(side="left", padx=(6, 0))
             else:
                 color = info["color"]
-                lbl = tk.Label(left, text=italic_pad(info["title"].upper()), font=(self.display, 10, "bold", "italic"),
+                lbl = tk.Label(left, text=info["title"], font=(FONT, 10, "bold"),
                                bg=CARD, fg=HILITE if color == "rainbow" else color, width=12, anchor="w")
                 lbl.pack(side="left")
                 if color == "rainbow":
@@ -982,7 +1058,7 @@ class App:
             else:
                 self.log_threadsafe(f"Поймано: {name} (×{catch.count})")
             if catch.new:
-                self.log_threadsafe(f"🆕 Новая рыба в каталоге: {name}. Иконку можно привязать в «Рыбалка → Каталог рыб»")
+                self.log_threadsafe(f"🆕 Новая рыба в каталоге: {name}. Иконку можно привязать в «Улов → Каталог рыб»")
                 self.events.put(("catalog", None))
                 self.tg.send(f"🆕 Новая рыба в каталоге: {name}", buttons=False)
             self.remote.poke()
@@ -1024,7 +1100,7 @@ class App:
 
     def _send_catches(self):
         if not self.tg._creds()[0]:
-            self.log("Telegram не настроен — заполните токен и chat id на вкладке «Будильник»")
+            self.log("Telegram не настроен — заполните токен и chat id в разделе «Телефон»")
             return
         log = self.catch_log
 
@@ -1172,10 +1248,11 @@ class App:
             return
         first = self._update is None or self._update.version != upd.version
         self._update = upd
-        self.update_btn.configure(text=f"⬆ ОБНОВИТЬ ДО {upd.version}")
-        self.update_btn.place(relx=1, x=-232, y=78, anchor="ne")
+        self.update_btn.configure(text=f"⬆ Обновить до {upd.version}")
+        if not self.update_btn.winfo_manager():
+            self.update_btn.pack(fill="x", pady=(0, 6), before=self._guide_btn)
         if first:
-            self.log(f"Доступна новая версия {upd.version} — нажмите «Обновить» в шапке")
+            self.log(f"Доступна новая версия {upd.version} — нажмите «Обновить» слева внизу")
             if self.tg._creds()[0]:
                 self.tg.send(f"⬆ Доступна новая версия макроса {upd.version}. Обновить — кнопкой в программе",
                              buttons=False)
@@ -1194,7 +1271,7 @@ class App:
             return
         self._updating = True
         upd = self._update
-        self.update_btn.configure(text="СКАЧИВАЮ…", state="disabled")
+        self.update_btn.configure(text="Скачиваю…", state="disabled")
         self.log(f"Скачиваю версию {upd.version}…")
         shown = [0]
 
@@ -1217,7 +1294,7 @@ class App:
     def _update_failed(self):
         self._updating = False
         if self._update:
-            self.update_btn.configure(text=f"⬆ ОБНОВИТЬ ДО {self._update.version}", state="normal")
+            self.update_btn.configure(text=f"⬆ Обновить до {self._update.version}", state="normal")
 
     def _install_update(self, new, upd):
         self._save()
@@ -1324,7 +1401,7 @@ class App:
                     self._status_text = text
                     self._status_color = color
                     self.remote.poke()
-                    self.status.configure(text=f"  ●  {text.upper()}  ", fg_color=STATUS_COLORS.get(color, color))
+                    self.status.configure(text=f"●  {text}", fg_color=STATUS_COLORS.get(color, color))
                 elif kind == "stats":
                     self._stats = payload
                     self.remote.poke()
@@ -1349,12 +1426,12 @@ class App:
             return
         was_running, self._was_running = self._was_running, running
         if running:
-            self.start_btn.configure(text="■  СТОП ", fg_color=RED, hover_color=RED_HOVER)
+            self.start_btn.configure(text="■  Стоп", fg_color=RED, hover_color=RED_HOVER)
             if self.cfg.get("blackout_enabled") and not self.blackout.active:
                 delay = max(float(self.cfg.get("blackout_delay") or 0), 0)
                 self._blackout_job = self.root.after(int(delay * 1000), self._blackout_on)
         else:
-            self.start_btn.configure(text="▶  СТАРТ ", fg_color=GREEN, hover_color=GREEN_HOVER)
+            self.start_btn.configure(text="▶  Старт", fg_color=GREEN, hover_color=GREEN_HOVER)
             if was_running:
                 # Макрос остановился (вручную или по тревоге) — экран обратно, чтобы было видно, что случилось
                 self._blackout_off()
@@ -1366,11 +1443,11 @@ class App:
         runtime = int(time.time() - started) if started and self.engine.running else 0
         h, rem = divmod(runtime, 3600)
         catches = s.get("catches", 0)
-        self.stat_values["catches"].configure(text=italic_pad(catches))
-        self.stat_values["casts"].configure(text=italic_pad(s.get("casts", 0)))
-        self.stat_values["runtime"].configure(text=italic_pad(f"{h}:{rem // 60:02d}:{rem % 60:02d}"))
+        self.stat_values["catches"].configure(text=str(catches))
+        self.stat_values["casts"].configure(text=str(s.get("casts", 0)))
+        self.stat_values["runtime"].configure(text=f"{h}:{rem // 60:02d}:{rem % 60:02d}")
         rate = catches * 3600 / runtime if runtime >= 60 else 0
-        self.stat_values["rate"].configure(text=italic_pad(f"{rate:.0f}"))
+        self.stat_values["rate"].configure(text=f"{rate:.0f}")
 
     def run(self):
         self.root.mainloop()

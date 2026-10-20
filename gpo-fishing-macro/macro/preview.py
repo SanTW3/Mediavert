@@ -10,7 +10,7 @@ from .detector import detect
 class Preview(tk.Toplevel):
     def __init__(self, root, cfg, engine):
         super().__init__(root)
-        self.title("Окно отладки")
+        self.title("Что видит макрос")
         self.attributes("-topmost", True)
         self.cfg = cfg
         self.engine = engine

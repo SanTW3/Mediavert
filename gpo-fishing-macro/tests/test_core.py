@@ -775,11 +775,15 @@ def test_item_line_split_by_ocr_and_unknown_fish():
     assert log.add(black, text="SAFE ZONE PROTECTED") is None
 
 
-def test_anglerfish_icon_and_rarity_from_notice():
+def test_builtin_without_frame_learns_rarity_from_notice(monkeypatch):
+    """Рыба со скрина без рамки (редкость неизвестна) запоминает редкость по цвету названия."""
     from macro import fishdb
     from macro.catches import CatchLog
-    f = fishdb.by_id("12")
-    assert f["name"] == "Anglerfish" and f["rarity"] is None and fishdb.icon("12").size == (71, 71)
+    assert {fishdb.by_id(i)["rarity"] for i in ("12", "13", "14", "15")} == {"legendary"}   # со скринов
+    assert fishdb.by_id("15")["price"] == 11114 and fishdb.icon("15").size == (71, 71)
+    builtin = [dict(f, rarity=None) if f["id"] == "12" else f for f in fishdb.BUILTIN]
+    monkeypatch.setattr(fishdb, "BUILTIN", builtin)
+    assert fishdb.by_id("12")["rarity"] is None
     log = CatchLog(dict(config.DEFAULTS), log=lambda t: None)
     rgb, lines = _notice("Anglerfish", color=(190, 110, 255))   # фиолетовое название — эпическая
     c = log.add(rgb, lines=lines)

@@ -44,11 +44,10 @@ BUILTIN = [
     {"id": "10", "name": "Exotic Tigerfin", "rarity": "rare", "price": 2000},
     {"id": "11", "name": "Zebra Ribbon Angelfish", "rarity": "rare", "price": 2328},
     # Со скрина без рамки: редкость узнаётся по цвету названия в первом уведомлении о поимке
-    {"id": "12", "name": "Anglerfish", "rarity": None, "price": 0},
-    {"id": "13", "name": "Golden Ribbon Angelfish", "rarity": None, "price": 0},
-    {"id": "14", "name": "Swordfish", "rarity": None, "price": 0},
-    # Иконку на скрине закрывала надпись — пока силуэт легендарной рыбы
-    {"id": "15", "name": "Dark Skeletal Shark", "rarity": "legendary", "price": 0},
+    {"id": "12", "name": "Anglerfish", "rarity": "legendary", "price": 12660},
+    {"id": "13", "name": "Golden Ribbon Angelfish", "rarity": "legendary", "price": 11567},
+    {"id": "14", "name": "Swordfish", "rarity": "legendary", "price": 11031},
+    {"id": "15", "name": "Dark Skeletal Shark", "rarity": "legendary", "price": 11114},
 ]
 FISH = BUILTIN  # совместимость
 RARITY_ORDER = {"legendary": 0, "epic": 1, "rare": 2, "common": 3, None: 4}

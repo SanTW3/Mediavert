@@ -4,11 +4,12 @@ import json
 import os
 import sys
 
-CONFIG_VERSION = 5
+CONFIG_VERSION = 6
 
 DEFAULTS = {
     "config_version": CONFIG_VERSION,
     "guide_shown": False,       # гайд при первом запуске
+    "language": "en",           # язык интерфейса: en, ru, es, pt (выбирается на первой странице гайда)
 
     # General
     "hotkey_start_stop": "f1",
@@ -173,6 +174,10 @@ def migrate(cfg, version):
     if version < 5 and float(cfg.get("black_threshold") or 0) == 0.5:
         # v5: 50% тёмного экрана бывает и ночью в игре — макрос прыгал без чёрного экрана
         cfg["black_threshold"] = DEFAULTS["black_threshold"]
+    if version < 6:
+        # v6: появились языки, по умолчанию английский. Кто уже пользовался программой — тот видел её
+        # по-русски, оставляем русский (сменить можно в «Программа → Язык»)
+        cfg["language"] = "ru"
     # Пустые «свои названия» скрывали название рыбы в каталоге
     cfg["fish_names"] = {k: v for k, v in dict(cfg.get("fish_names") or {}).items() if str(v or "").strip()}
     cfg["config_version"] = CONFIG_VERSION

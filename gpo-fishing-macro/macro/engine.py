@@ -6,6 +6,7 @@ from . import alarm, screen, winput
 from .controller import PDController
 from .detector import black_fraction, detect
 from .watchdog import Watchdog
+from .i18n import tr
 
 
 CATCH_FRAME_GAP = 0.4    # с между снимками уведомления о рыбе
@@ -63,7 +64,7 @@ class AlarmManager:
 
     def acknowledge(self):
         if self.active:
-            self.log("Тревога сброшена")
+            self.log(tr("Тревога сброшена"))
         self.active = False
         self._event.set()
 
@@ -96,7 +97,7 @@ class MacroEngine:
             return
         problems = self.validate()
         if problems:
-            self.on_status("Не настроено: " + "; ".join(problems), "red")
+            self.on_status(tr("Не настроено: ") + "; ".join(problems), "red")
             return
         self.alarms.acknowledge()
         self._stop.clear()
@@ -118,15 +119,15 @@ class MacroEngine:
         cfg = self.cfg
         problems = []
         if not cfg.get("area"):
-            problems.append("область мини-игры (F2)")
+            problems.append(tr("область мини-игры (F2)"))
         if not cfg.get("water_point"):
-            problems.append("точка воды (Casting)")
+            problems.append(tr("точка воды (Casting)"))
         if cfg.get("auto_buy_bait") and not all(cfg.get(k) for k in ("buy_left", "buy_middle", "buy_right")):
-            problems.append("точки покупки наживки")
+            problems.append(tr("точки покупки наживки"))
         if cfg.get("auto_store_fruit") and not cfg.get("store_point"):
-            problems.append("точка Store для фрукта")
+            problems.append(tr("точка Store для фрукта"))
         if cfg.get("auto_select_bait") and not cfg.get("bait_point"):
-            problems.append("точка верхней наживки")
+            problems.append(tr("точка верхней наживки"))
         return problems
 
     # ---------- утилиты ----------
@@ -142,11 +143,11 @@ class MacroEngine:
             self._raise_alarm(reason)
 
     def _raise_alarm(self, reason):
-        self.log("ТРЕВОГА: " + reason)
+        self.log(tr("ТРЕВОГА: ") + reason)
         self._set_mouse(False)
         self.alarms.trigger(reason)
         if self.cfg.get("wd_stop_on_alarm"):
-            self.on_status("Тревога: " + reason, "red")
+            self.on_status(tr("Тревога: ") + reason, "red")
             self._stop.set()
             raise _Stopped
         # Макрос продолжает работу — начинаем отсчёт заново, чтобы не спамить
@@ -189,7 +190,7 @@ class MacroEngine:
     def _focus_roblox(self):
         """Roblox Window Focus: выводим окно игры вперёд перед началом работы."""
         if not winput.focus_roblox():
-            self.log("Окно Roblox не найдено")
+            self.log(tr("Окно Roblox не найдено"))
             return False
         self._delay("focus_delay")
         self._delay("post_focus_delay")
@@ -224,19 +225,17 @@ class MacroEngine:
         level = self._black_level()
         if level < threshold:
             return
-        self.log(f"Чёрный экран античита ({level:.0%} окна Roblox чёрное) — спамлю клавишей "
-                 f"{cfg['black_spam_key']}. Если экран на самом деле не чёрный, поднимите «Порог чёрного "
-                 "экрана» или поставьте 0, чтобы выключить проверку")
-        self.on_status("Убираем чёрный экран", "orange")
+        self.log(tr("Чёрный экран античита ({level:.0%} окна Roblox чёрное) — спамлю клавишей {v1}. Если экран на самом деле не чёрный, поднимите «Порог чёрного экрана» или поставьте 0, чтобы выключить проверку", level=level, v1=cfg['black_spam_key']))
+        self.on_status(tr("Убираем чёрный экран"), "orange")
         self._set_mouse(False)
         deadline = time.monotonic() + float(cfg["black_max_sec"])
         while self._black_level() >= threshold:
             if time.monotonic() > deadline:
-                self._raise_alarm(f"Чёрный экран не уходит {cfg['black_max_sec']:g} с — нужна ваша помощь")
+                self._raise_alarm(tr("Чёрный экран не уходит {v0:g} с — нужна ваша помощь", v0=cfg['black_max_sec']))
                 return
             winput.press_key(cfg["black_spam_key"])
             self._delay("black_spam_delay")
-        self.log("Чёрный экран убран")
+        self.log(tr("Чёрный экран убран"))
 
     def _grab_detect(self):
         cfg = self.cfg
@@ -254,8 +253,8 @@ class MacroEngine:
 
     # ---------- цикл ----------
     def _run(self):
-        self.log("Макрос запущен")
-        self.on_status("Работает", "green")
+        self.log(tr("Макрос запущен"))
+        self.on_status(tr("Работает"), "green")
         self.watchdog.reset()
         self._emit_stats()
         try:
@@ -266,14 +265,12 @@ class MacroEngine:
                 self._cast()
                 if not self._wait_for_bite():
                     self.watchdog.on_cast_failed()
-                    self.log(f"Нет поклёвки за {self.cfg['recast_timeout']} с — перезаброс "
-                             f"({self.watchdog.failed_casts} подряд)")
+                    self.log(tr("Нет поклёвки за {v0} с — перезаброс ({failed_casts} подряд)", v0=self.cfg['recast_timeout'], failed_casts=self.watchdog.failed_casts))
                     self._check()
                     continue
                 det = self.last_detection[1] if self.last_detection else None
                 if det:
-                    self.log(f"Мини-игра найдена: полоса {det.zone_top}-{det.zone_bottom}, "
-                             f"трек {det.bar_top}-{det.bar_bottom}, колонки {det.bar_x0}-{det.bar_x1}")
+                    self.log(tr("Мини-игра найдена: полоса {zone_top}-{zone_bottom}, трек {bar_top}-{bar_bottom}, колонки {bar_x0}-{bar_x1}", zone_top=det.zone_top, zone_bottom=det.zone_bottom, bar_top=det.bar_top, bar_bottom=det.bar_bottom, bar_x0=det.bar_x0, bar_x1=det.bar_x1))
                 self._play_minigame()
                 self._after_minigame()
                 self.stats["catches"] += 1
@@ -284,14 +281,14 @@ class MacroEngine:
         except _Stopped:
             pass
         except Exception as exc:
-            self.log(f"Ошибка: {exc!r}")
-            self.alarms.trigger(f"Макрос упал с ошибкой: {exc!r}")
-            self.on_status("Ошибка", "red")
+            self.log(tr("Ошибка: {exc!r}", exc=exc))
+            self.alarms.trigger(tr("Макрос упал с ошибкой: {exc!r}", exc=exc))
+            self.on_status(tr("Ошибка"), "red")
         finally:
             self._set_mouse(False)
             if not self.alarms.active:
-                self.on_status("Остановлен", "red")
-            self.log("Макрос остановлен")
+                self.on_status(tr("Остановлен"), "red")
+            self.log(tr("Макрос остановлен"))
 
     def _pre_cast(self):
         cfg = self.cfg
@@ -303,7 +300,7 @@ class MacroEngine:
         every = max(int(cfg["loops_per_purchase"] or 1), 1)
         skip = cfg.get("buy_skip_first") and loops == 0  # «Не покупать при старте»
         if cfg.get("auto_buy_bait") and loops % every == 0 and not skip:
-            self.on_status("Покупка наживки", "blue")
+            self.on_status(tr("Покупка наживки"), "blue")
             self._key(cfg["other_hotkey"], "rod_select_delay")  # убираем удочку, чтобы E сработала
             # E → левый → средний → ввод количества → левый → правый → средний
             self._key("e", "buy_e_delay")
@@ -324,7 +321,7 @@ class MacroEngine:
 
     def _cast(self):
         cfg = self.cfg
-        self.on_status("Заброс", "blue")
+        self.on_status(tr("Заброс"), "blue")
         winput.move_to(*cfg["water_point"])
         self._delay("cursor_delay")
         self._set_mouse(True)
@@ -336,7 +333,7 @@ class MacroEngine:
         self._emit_stats()
 
     def _wait_for_bite(self):
-        self.on_status("Ждём поклёвку", "blue")
+        self.on_status(tr("Ждём поклёвку"), "blue")
         deadline = time.monotonic() + float(self.cfg["recast_timeout"])
         frame = max(float(self.cfg["scan_loop_delay"]), 0.005)
         seen = 0
@@ -350,7 +347,7 @@ class MacroEngine:
 
     def _play_minigame(self):
         cfg = self.cfg
-        self.on_status("Вываживание", "green")
+        self.on_status(tr("Вываживание"), "green")
         ctrl = PDController(float(cfg["kp"]), float(cfg["kd"]), float(cfg["pd_clamp"]),
                             float(cfg["approach_damping"]), float(cfg["chase_damping"]))
         resend = float(cfg["resend_interval"])
@@ -385,7 +382,7 @@ class MacroEngine:
                         self._set_mouse(ctrl.update(det.zone_center, fish, det.bar_height, dt), resend)
                 spent = time.monotonic() - now
                 self._stop.wait(max(frame - spent, 0.001))
-            self.log("Мини-игра длится больше 3 минут — сбрасываю")
+            self.log(tr("Мини-игра длится больше 3 минут — сбрасываю"))
         finally:
             self._in_minigame = False
             self._set_mouse(False)
@@ -408,7 +405,7 @@ class MacroEngine:
             try:
                 frames.append(screen.grab(area))
             except Exception as exc:
-                self.log(f"Не удалось снять уведомление о рыбе: {exc}")
+                self.log(tr("Не удалось снять уведомление о рыбе: {exc}", exc=exc))
                 break
             self._sleep(CATCH_FRAME_GAP)
             spent += CATCH_FRAME_GAP
@@ -419,7 +416,7 @@ class MacroEngine:
     def _post_catch(self):
         cfg = self.cfg
         if cfg.get("auto_store_fruit"):
-            self.on_status("Сохраняем фрукт", "blue")
+            self.on_status(tr("Сохраняем фрукт"), "blue")
             self._key(cfg["fruit_hotkey"], "fruit_hotkey_delay")
             self._click(cfg["store_point"], "fruit_store_delay")
             # Shift-lock выкл → Backspace (выбросить, если не сохранилось) → Shift-lock обратно

@@ -1,5 +1,6 @@
 """Сторож: замечает, что макрос перестал ловить рыбу, и решает, когда будить хозяина."""
 import time
+from .i18n import tr
 
 
 class Watchdog:
@@ -33,13 +34,12 @@ class Watchdog:
         now = self.clock()
         limit = int(cfg.get("wd_failed_casts") or 0)
         if limit > 0 and self.failed_casts >= limit:
-            return (f"{self.failed_casts} забросов подряд без поклёвки — "
-                    "возможно, кончилась наживка, дисконнект или персонажа сдвинули")
+            return tr("{failed_casts} забросов подряд без поклёвки — возможно, кончилась наживка, дисконнект или персонажа сдвинули", failed_casts=self.failed_casts)
         minutes = float(cfg.get("wd_no_catch_min") or 0)
         if minutes > 0 and now - self.last_catch >= minutes * 60:
-            return f"Ни одной рыбы за {minutes:g} мин"
+            return tr("Ни одной рыбы за {minutes:g} мин", minutes=minutes)
         grace = float(cfg.get("wd_window_grace_sec") or 0)
         if (cfg.get("wd_check_window") and self.window_lost_since is not None
                 and now - self.window_lost_since >= grace):
-            return "Окно Roblox закрыто или не активно — игра вылетела или окно свернули"
+            return tr("Окно Roblox закрыто или не активно — игра вылетела или окно свернули")
         return None

@@ -2,6 +2,7 @@
 import ctypes
 import sys
 import tkinter as tk
+from .i18n import tr
 
 
 def virtual_screen(root):
@@ -24,7 +25,7 @@ class _Overlay(tk.Toplevel):
         self.canvas.pack(fill="both", expand=True)
         # Подсказка — по центру основного монитора, а не на стыке двух
         self.canvas.create_text(-self.vx + root.winfo_screenwidth() // 2, 40,
-                                text=hint + "   (Esc или правый клик — отмена)",
+                                text=hint + tr("   (Esc или правый клик — отмена)"),
                                 fill="white", font=("Segoe UI", 16, "bold"))
         # Esc ловим и здесь, и глобально в gui.py: окну без рамки Windows часто не даёт фокус
         self.bind("<Escape>", lambda e: self.cancel())
@@ -62,8 +63,8 @@ class AreaSelector(_Overlay):
     GRAB = 10        # насколько близко к краю считается «за край»
     MIN = 8
 
-    def __init__(self, root, current, callback, hint="Выделите мышью область с полосами мини-игры"):
-        super().__init__(root, hint + ".  Тяните за углы и края, Enter или двойной клик — сохранить")
+    def __init__(self, root, current, callback, hint=tr("Выделите мышью область с полосами мини-игры")):
+        super().__init__(root, hint + tr(".  Тяните за углы и края, Enter или двойной клик — сохранить"))
         self.callback = callback
         self.box = None           # [x0, y0, x1, y1] в координатах холста
         self.mode = None          # "new" | "move" | сторона ("n", "se", …)
@@ -99,7 +100,7 @@ class AreaSelector(_Overlay):
             self.handles.append(c.create_rectangle(hx - self.HANDLE, hy - self.HANDLE, hx + self.HANDLE,
                                                    hy + self.HANDLE, fill="#00ff00", outline="white"))
         self.label = c.create_text(x0, y0 - 14, anchor="w", fill="#00ff00", font=("Segoe UI", 11, "bold"),
-                                   text=f"{int(x1 - x0)}×{int(y1 - y0)}   Enter — сохранить")
+                                   text=tr("{v0}×{v1}   Enter — сохранить", v0=int(x1 - x0), v1=int(y1 - y0)))
 
     def _handle_points(self):
         x0, y0, x1, y1 = self.box

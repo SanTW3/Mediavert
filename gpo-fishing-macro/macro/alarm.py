@@ -11,6 +11,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from .i18n import tr
 
 TIMEOUT = 15
 
@@ -78,7 +79,7 @@ def channels(cfg):
 
 def send_alarm(cfg, reason, screenshot_png=None, log=print):
     """Шлёт тревогу во все настроенные каналы. Возвращает число успешных отправок."""
-    title = "GPO Macro: что-то пошло не так!"
+    title = tr("GPO Macro: что-то пошло не так!")
     message = f"{reason}\n{time.strftime('%H:%M:%S')}"
     sent = 0
     jobs = []
@@ -97,12 +98,12 @@ def send_alarm(cfg, reason, screenshot_png=None, log=print):
         try:
             job()
             sent += 1
-            log(f"Тревога отправлена: {name}")
+            log(tr("Тревога отправлена: {name}", name=name))
         except Exception as exc:  # сеть, неверный токен и т.п. — не роняем макрос
             if name == "Telegram":
                 from .tgcontrol import explain
                 exc = explain(exc)
-            log(f"Не удалось отправить в {name}: {exc}")
+            log(tr("Не удалось отправить в {name}: {exc}", name=name, exc=exc))
     if not jobs:
-        log("Тревога не отправлена: не настроен ни один канал")
+        log(tr("Тревога не отправлена: не настроен ни один канал"))
     return sent

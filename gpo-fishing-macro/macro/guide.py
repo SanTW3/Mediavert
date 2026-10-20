@@ -8,10 +8,12 @@ import tkinter as tk
 import customtkinter as ctk
 
 from .theme import ACCENT, ACCENT_HOVER, BG, CARD, CARD_BORDER, FIELD, GREEN, GREEN_HOVER, HILITE, MUTED, TEXT
+from .i18n import LANGUAGES, current, tr
 
 PAGES = [
     {
         "title": "Привет! Это FishPilot",
+        "language": True,
         "text": (
             "Он сам забрасывает удочку, проходит мини-игру, считает улов и звонит на телефон, "
             "если что-то пошло не так.\n\n"
@@ -98,7 +100,7 @@ class Guide(ctk.CTkToplevel):
     def __init__(self, app):
         super().__init__(app.root, fg_color=BG)
         self.app = app
-        self.title("Гайд — FishPilot")
+        self.title(tr("Гайд — FishPilot"))
         self.geometry("560x560")
         self.resizable(False, False)
         self.attributes("-topmost", True)
@@ -121,12 +123,12 @@ class Guide(ctk.CTkToplevel):
 
         nav = tk.Frame(self, bg=BG)
         nav.pack(fill="x", padx=20, pady=14)
-        self.back = ctk.CTkButton(nav, text="← Назад", width=110, fg_color=FIELD, hover_color=CARD_BORDER,
+        self.back = ctk.CTkButton(nav, text=tr("← Назад"), width=110, fg_color=FIELD, hover_color=CARD_BORDER,
                                   command=lambda: self.go(-1))
         self.back.pack(side="left")
         self.dots = tk.Label(nav, bg=BG, fg=MUTED, font=("Segoe UI", 12))
         self.dots.pack(side="left", expand=True)
-        self.next = ctk.CTkButton(nav, text="Далее →", width=130, fg_color=ACCENT, hover_color=ACCENT_HOVER,
+        self.next = ctk.CTkButton(nav, text=tr("Далее →"), width=130, fg_color=ACCENT, hover_color=ACCENT_HOVER,
                                   command=lambda: self.go(1))
         self.next.pack(side="right")
         self.protocol("WM_DELETE_WINDOW", self.finish)
@@ -143,32 +145,54 @@ class Guide(ctk.CTkToplevel):
         page = PAGES[self.page]
         for child in self.body.winfo_children():
             child.destroy()
-        self.step.configure(text=f"ШАГ {self.page} ИЗ {len(PAGES) - 1}" if self.page else "ГАЙД")
-        self.title_lbl.configure(text=page["title"])
-        tk.Label(self.body, text=page["text"], bg=CARD, fg=TEXT, font=("Segoe UI", 10), justify="left",
+        self.step.configure(text=tr("ШАГ {page} ИЗ {v1}", page=self.page, v1=len(PAGES) - 1) if self.page else tr("ГАЙД"))
+        self.title_lbl.configure(text=tr(page["title"]))
+        if page.get("language"):
+            self._language_picker()
+        tk.Label(self.body, text=tr(page["text"]), bg=CARD, fg=TEXT, font=("Segoe UI", 10), justify="left",
                  anchor="nw", wraplength=480).pack(anchor="w", fill="x")
         for label, key, secret in page.get("fields", ()):
             row = tk.Frame(self.body, bg=CARD)
             row.pack(fill="x", pady=(10, 0))
-            tk.Label(row, text=label, bg=CARD, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w")
+            tk.Label(row, text=tr(label), bg=CARD, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w")
             ctk.CTkEntry(row, textvariable=self.app.var(key, str), fg_color=FIELD, border_color=CARD_BORDER,
                          show="•" if secret else "").pack(fill="x")
         if page.get("buttons"):
             row = tk.Frame(self.body, bg=CARD)
             row.pack(fill="x", pady=(14, 0))
             for text, action in page["buttons"]:
-                ctk.CTkButton(row, text=text, fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                ctk.CTkButton(row, text=tr(text), fg_color=ACCENT, hover_color=ACCENT_HOVER,
                               command=lambda a=action: self.do(a)).pack(side="left", padx=(0, 8))
         last = self.page == len(PAGES) - 1
         self.back.configure(state="normal" if self.page else "disabled")
-        self.next.configure(text="Готово ✓" if last else "Далее →",
+        self.next.configure(text=tr("Готово ✓") if last else tr("Далее →"),
                             fg_color=GREEN if last else ACCENT, hover_color=GREEN_HOVER if last else ACCENT_HOVER)
         self.dots.configure(text=" ".join("●" if i == self.page else "○" for i in range(len(PAGES))))
+
+    def _language_picker(self):
+        """Выбор языка — первым делом на первой странице гайда. Окно программы перестраивается сразу."""
+        box = tk.Frame(self.body, bg=CARD)
+        box.pack(fill="x", pady=(0, 12))
+        tk.Label(box, text="🌐  Language · Idioma · Язык", bg=CARD, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w")
+        names = {name: code for code, (name, _) in LANGUAGES.items()}
+        picker = ctk.CTkSegmentedButton(box, values=list(names), fg_color=FIELD, selected_color=ACCENT,
+                                        selected_hover_color=ACCENT_HOVER, unselected_color=FIELD,
+                                        command=lambda name: self._set_language(names[name]))
+        picker.set(LANGUAGES[current()][0])
+        picker.pack(fill="x", pady=(4, 0))
+
+    def _set_language(self, code):
+        if code == current():
+            return
+        self.app.set_language(code)
+        self.title(tr("Гайд — FishPilot"))
+        self.back.configure(text=tr("← Назад"))
+        self.render()
 
     def do(self, action):
         app = self.app
         if action == "water":
-            app.pick_point("water_point", "Кликните по воде, куда забрасывать удочку")
+            app.pick_point("water_point", tr("Кликните по воде, куда забрасывать удочку"))
         elif action == "preview":
             app._open_preview()
         elif action == "catch_area":

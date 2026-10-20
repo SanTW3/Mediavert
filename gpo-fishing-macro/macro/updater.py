@@ -18,6 +18,7 @@ import urllib.request
 from dataclasses import dataclass
 
 from . import __version__
+from .i18n import tr
 
 DEFAULT_REPO = "SanTW3/Mediavert"
 TAG = "gpo-latest"
@@ -87,7 +88,7 @@ def download(update, dest, progress=None):
                 progress(min(done / update.size, 1.0))
     if h.hexdigest() != update.sha256:
         os.remove(tmp)
-        raise ValueError("файл скачался с ошибкой (не совпала контрольная сумма) — попробуйте ещё раз")
+        raise ValueError(tr("файл скачался с ошибкой (не совпала контрольная сумма) — попробуйте ещё раз"))
     os.replace(tmp, dest)
     return dest
 

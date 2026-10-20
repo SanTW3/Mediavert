@@ -5,12 +5,13 @@ from PIL import Image, ImageDraw, ImageTk
 
 from . import screen
 from .detector import detect
+from .i18n import tr
 
 
 class Preview(tk.Toplevel):
     def __init__(self, root, cfg, engine):
         super().__init__(root)
-        self.title("Что видит макрос")
+        self.title(tr("Что видит макрос"))
         self.attributes("-topmost", True)
         self.cfg = cfg
         self.engine = engine
@@ -42,7 +43,7 @@ class Preview(tk.Toplevel):
             rgb, det = self._frame()
         except Exception as exc:
             rgb, det = None, None
-            self.info.config(text=f"Ошибка захвата: {exc}")
+            self.info.config(text=tr("Ошибка захвата: {exc}", exc=exc))
         if rgb is not None:
             img = Image.fromarray(rgb)
             draw = ImageDraw.Draw(img)
@@ -53,15 +54,14 @@ class Preview(tk.Toplevel):
                 draw.line([0, det.bar_bottom, img.width, det.bar_bottom], fill=(255, 255, 0))
                 if det.fish_y is not None:
                     draw.line([0, det.fish_y, img.width, det.fish_y], fill=(255, 0, 0), width=2)
-                fish = f"{det.fish_y:.0f}" if det.fish_y is not None else "не найдена"
-                self.info.config(text=f"Мини-игра: НАЙДЕНА\nПолоса игрока (пурпурная): {det.zone_top}-{det.zone_bottom}\n"
-                                      f"Черта рыбы (красная): {fish}\nТрек (жёлтый): {det.bar_top}-{det.bar_bottom}")
+                fish = f"{det.fish_y:.0f}" if det.fish_y is not None else tr("не найдена")
+                self.info.config(text=tr("Мини-игра: НАЙДЕНА\nПолоса игрока (пурпурная): {zone_top}-{zone_bottom}\nЧерта рыбы (красная): {fish}\nТрек (жёлтый): {bar_top}-{bar_bottom}", zone_top=det.zone_top, zone_bottom=det.zone_bottom, fish=fish, bar_top=det.bar_top, bar_bottom=det.bar_bottom))
             else:
-                self.info.config(text="Мини-игра: не найдена\n(проверьте область и цвет трека)")
+                self.info.config(text=tr("Мини-игра: не найдена\n(проверьте область и цвет трека)"))
             scale = max(1, min(3, 400 // max(img.height, 1)))
             img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
             self._photo = ImageTk.PhotoImage(img)
             self.image_label.config(image=self._photo)
         elif not self.cfg.get("area"):
-            self.info.config(text="Область не выбрана — нажмите F2")
+            self.info.config(text=tr("Область не выбрана — нажмите F2"))
         self.after(100, self._tick)

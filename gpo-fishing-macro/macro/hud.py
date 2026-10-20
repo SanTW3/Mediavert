@@ -8,6 +8,7 @@ import ctypes
 import sys
 import time
 import tkinter as tk
+from .i18n import tr
 
 KEY = "#010203"            # цвет-ключ: всё, что им залито, прозрачно
 PANEL_W, PANEL_H = 250, 178
@@ -93,8 +94,7 @@ class Hud:
                 excluded = False
             if not excluded and not self._warned:
                 self._warned = True
-                self.log("HUD: эта Windows не умеет прятать окна от захвата экрана — HUD виден на скриншотах "
-                         "(распознаванию он не мешает: рисуется вокруг области)")
+                self.log(tr("HUD: эта Windows не умеет прятать окна от захвата экрана — HUD виден на скриншотах (распознаванию он не мешает: рисуется вокруг области)"))
 
     def hide(self):
         if self.win is not None:
@@ -149,8 +149,8 @@ class Hud:
         catches = data.get("catches") or 0
         rate = f"{catches * 3600 / runtime:.0f}" if runtime >= 60 else "–"
         rows = [
-            ("Время", fmt_time(runtime)), ("Рыб в час", rate),
-            ("Поймано", str(catches)), ("Забросов", str(data.get("casts") or 0)),
+            (tr("Время"), fmt_time(runtime)), (tr("Рыб в час"), rate),
+            (tr("Поймано"), str(catches)), (tr("Забросов"), str(data.get("casts") or 0)),
         ]
         for i, (k, v) in enumerate(rows):
             cx = x + 12 + (i % 2) * 120
@@ -158,18 +158,18 @@ class Hud:
             c.create_text(cx, cy, anchor="w", text=v, fill="#e6f1ff", font=(font, 14, "bold"))
             c.create_text(cx, cy + 15, anchor="w", text=k.upper(), fill="#7f9cc0", font=(font, 8))
         last = data.get("last_fish")
-        c.create_text(x + 12, y + 122, anchor="w", text=f"Последняя: {last}" if last else "Рыбы ещё не было",
+        c.create_text(x + 12, y + 122, anchor="w", text=tr("Последняя: {last}", last=last) if last else tr("Рыбы ещё не было"),
                       fill="#e6f1ff" if last else "#7f9cc0", font=(font, 10))
         if live and live.get("bar_h"):
             h = live["bar_h"]
             fish = "–" if live.get("fish") is None else f"{100 - (live['fish'] - live['bar_top']) / h * 100:.0f}%"
             zone = f"{100 - ((live['zone_top'] + live['zone_bottom']) / 2 - live['bar_top']) / h * 100:.0f}%"
-            line = f"Рыба {fish} · Полоса {zone} · {live.get('fps', 0):.0f} к/с"
+            line = tr("Рыба {fish} · Полоса {zone} · {v2:.0f} к/с", fish=fish, zone=zone, v2=live.get('fps', 0))
             c.create_text(x + 12, y + 146, anchor="w", text=line, fill="#e6f1ff", font=(font, 10))
             hold = live.get("hold")
-            c.create_text(x + 12, y + 165, anchor="w", text="ЛКМ ● зажата" if hold else "ЛКМ ○ отпущена",
+            c.create_text(x + 12, y + 165, anchor="w", text=tr("ЛКМ ● зажата") if hold else tr("ЛКМ ○ отпущена"),
                           fill="#4ade80" if hold else "#7f9cc0", font=(font, 10, "bold"))
         else:
             key = str(data.get("area_key") or "F2").upper()
-            hint = "Мини-игры нет" if data.get("area") else f"Область не выбрана — нажмите {key}"
+            hint = tr("Мини-игры нет") if data.get("area") else tr("Область не выбрана — нажмите {key}", key=key)
             c.create_text(x + 12, y + 150, anchor="w", text=hint, fill="#7f9cc0", font=(font, 10))

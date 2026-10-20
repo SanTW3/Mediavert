@@ -13,6 +13,7 @@ import tkinter as tk
 
 from . import winput
 from .overlay import virtual_screen
+from .i18n import tr
 
 GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x00000020
@@ -86,7 +87,7 @@ class Blackout:
         win.attributes("-topmost", True)
         win.configure(cursor="none")
         # Еле заметная подсказка (тёмно-серым, чтобы экран оставался тёмным)
-        hint = tk.Label(win, text="Рыбалка идёт…  нажмите любую клавишу или кнопку мыши, чтобы включить экран",
+        hint = tk.Label(win, text=tr("Рыбалка идёт…  нажмите любую клавишу или кнопку мыши, чтобы включить экран"),
                         fg="#2a2a2a", bg="black", font=("Segoe UI", 12))
         # По центру монитора с игрой: по центру всех мониторов надпись разрезало стыком экранов
         try:
@@ -105,13 +106,12 @@ class Blackout:
                 ok = False
             if not ok:
                 win.destroy()
-                self.log("Чёрный экран недоступен: нужна Windows 10 версии 2004 или новее "
-                         "(иначе макрос сам перестанет видеть игру)")
+                self.log(tr("Чёрный экран недоступен: нужна Windows 10 версии 2004 или новее (иначе макрос сам перестанет видеть игру)"))
                 return False
             # Показ окна мог увести фокус — возвращаем его игре
             self.root.after(100, winput.focus_roblox)
         self.win = win
-        self.log("Экран затемнён — любая клавиша или кнопка мыши вернёт его")
+        self.log(tr("Экран затемнён — любая клавиша или кнопка мыши вернёт его"))
         return True
 
     def hide(self):
@@ -122,4 +122,4 @@ class Blackout:
         except tk.TclError:
             pass
         self.win = None
-        self.log("Экран включён")
+        self.log(tr("Экран включён"))

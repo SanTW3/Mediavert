@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 from . import alarm
+from .i18n import tr
 
 BUTTONS = [
     [{"text": "🔆 Включить экран", "callback_data": "screen_on"},
@@ -32,6 +33,11 @@ COMMANDS = {"/menu": "menu", "/start": "menu", "/panel": "panel", "/screen_on": 
 
 
 API = "https://api.telegram.org"
+
+
+def tr_rows(rows):
+    """Кнопки бота на языке интерфейса (подписи в списках выше — по-русски, как ключи перевода)."""
+    return [[dict(b, text=tr(b["text"])) for b in row] for row in rows]
 
 
 TOKEN_RE = re.compile(r"\d{5,}:[A-Za-z0-9_-]{30,}")
@@ -81,22 +87,19 @@ def explain(exc):
     if isinstance(exc, TelegramError):
         d = exc.description.lower()
         if exc.code == 401 or "unauthorized" in d:
-            return "неверный токен бота — скопируйте его заново у @BotFather (целиком, вида 123456:ABC…)"
+            return tr("неверный токен бота — скопируйте его заново у @BotFather (целиком, вида 123456:ABC…)")
         if exc.code == 409:
-            return ("этот бот уже запущен в другой программе или на другом ПК (у каждого должен быть "
-                    "свой бот из @BotFather)")
+            return tr("этот бот уже запущен в другой программе или на другом ПК (у каждого должен быть свой бот из @BotFather)")
         if "chat not found" in d:
-            return ("chat not found — неверный chat id или вы ещё ни разу не писали боту: откройте бота, "
-                    "нажмите «Start» и затем «Узнать chat id»")
+            return tr("chat not found — неверный chat id или вы ещё ни разу не писали боту: откройте бота, нажмите «Start» и затем «Узнать chat id»")
         if exc.code == 403 or "blocked" in d or "can't initiate" in d:
-            return "бот не может написать вам: откройте бота в Telegram и нажмите «Start» (или разблокируйте его)"
+            return tr("бот не может написать вам: откройте бота в Telegram и нажмите «Start» (или разблокируйте его)")
         if exc.code == 400:
-            return f"Telegram отклонил запрос: {exc.description}"
+            return tr("Telegram отклонил запрос: {description}", description=exc.description)
         return str(exc)
     text = str(exc)
     if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
-        return (f"нет связи с api.telegram.org ({text}) — проверьте интернет; если Telegram у провайдера "
-                "заблокирован, включите VPN на ПК")
+        return tr("нет связи с api.telegram.org ({text}) — проверьте интернет; если Telegram у провайдера заблокирован, включите VPN на ПК", text=text)
     return text
 
 
@@ -123,27 +126,25 @@ def diagnose(cfg):
     chat = clean_chat(cfg.get("telegram_chat_id"))
     out = []
     if not token:
-        return False, ["Токен бота не заполнен: создайте бота у @BotFather и вставьте токен"]
+        return False, [tr("Токен бота не заполнен: создайте бота у @BotFather и вставьте токен")]
     if not TOKEN_RE.fullmatch(token):
-        out.append("Токен не похож на токен бота (должен быть вида 123456789:AAE…), проверяю всё равно")
+        out.append(tr("Токен не похож на токен бота (должен быть вида 123456789:AAE…), проверяю всё равно"))
     try:
         me = _call(token, "getMe").get("result") or {}
-        out.append(f"✓ Токен верный, бот @{me.get('username')}")
+        out.append(tr("✓ Токен верный, бот @{v0}", v0=me.get('username')))
     except Exception as exc:
         return False, out + ["✗ " + explain(exc)]
     if not chat:
-        return False, out + ["✗ Chat id не заполнен: напишите боту /start и нажмите «Узнать chat id»"]
+        return False, out + [tr("✗ Chat id не заполнен: напишите боту /start и нажмите «Узнать chat id»")]
     if chat == token.split(":")[0]:
-        return False, out + ["✗ В chat id вписан id самого бота. Нужен ваш id: напишите боту /start "
-                             "и нажмите «Узнать chat id»"]
+        return False, out + [tr("✗ В chat id вписан id самого бота. Нужен ваш id: напишите боту /start и нажмите «Узнать chat id»")]
     try:
-        _call(token, "sendMessage", {"chat_id": chat, "text": "✅ Проверка: макрос может писать вам в Telegram"})
-        out.append(f"✓ Сообщение отправлено в чат {chat}")
+        _call(token, "sendMessage", {"chat_id": chat, "text": tr("✅ Проверка: макрос может писать вам в Telegram")})
+        out.append(tr("✓ Сообщение отправлено в чат {chat}", chat=chat))
     except Exception as exc:
         return False, out + ["✗ " + explain(exc)]
     if not cfg.get("tg_control"):
-        out.append("Кнопки управления выключены («Кнопки управления в Telegram») — тревоги придут, "
-                   "но бот не будет отвечать на кнопки")
+        out.append(tr("Кнопки управления выключены («Кнопки управления в боте») — тревоги придут, но бот не будет отвечать на кнопки"))
     return True, out
 
 
@@ -183,17 +184,17 @@ class TelegramControl:
             return
         params = {"chat_id": chat, "text": text}
         if isinstance(buttons, list):
-            params["reply_markup"] = json.dumps({"inline_keyboard": buttons})
+            params["reply_markup"] = json.dumps({"inline_keyboard": tr_rows(buttons)})
         elif buttons:
-            rows = list(BUTTONS)
+            rows = tr_rows(BUTTONS)
             link = self._link()
             if link:
-                rows = [[{"text": "📱 Открыть панель", "web_app": {"url": link}}]] + rows
+                rows = [[{"text": tr("📱 Открыть панель"), "web_app": {"url": link}}]] + rows
             params["reply_markup"] = json.dumps({"inline_keyboard": rows})
         try:
             _call(token, "sendMessage", params)
         except Exception as exc:
-            self.log(f"Telegram: не удалось отправить сообщение: {explain(exc)}")
+            self.log(tr("Telegram: не удалось отправить сообщение: {v0}", v0=explain(exc)))
 
     def _link(self):
         try:
@@ -210,7 +211,7 @@ class TelegramControl:
         link = self._link()
         if link == self._menu_link:
             return
-        button = ({"type": "web_app", "text": "Панель", "web_app": {"url": link}} if link
+        button = ({"type": "web_app", "text": tr("Панель"), "web_app": {"url": link}} if link
                   else {"type": "commands"})
         _call(token, "setChatMenuButton", {"chat_id": chat, "menu_button": json.dumps(button)})
         self._menu_link = link
@@ -219,10 +220,10 @@ class TelegramControl:
         token, chat = self._creds()
         if token:
             try:
-                markup = json.dumps({"inline_keyboard": buttons}) if buttons else None
+                markup = json.dumps({"inline_keyboard": tr_rows(buttons)}) if buttons else None
                 alarm.send_telegram(token, chat, caption, png, reply_markup=markup)
             except Exception as exc:
-                self.log(f"Telegram: не удалось отправить скриншот: {explain(exc)}")
+                self.log(tr("Telegram: не удалось отправить скриншот: {v0}", v0=explain(exc)))
 
     def send_media(self, data, kind, caption, buttons=None):
         """Картинка (png) или анимация (gif) с подписью и, если нужно, кнопками под ней."""
@@ -235,11 +236,11 @@ class TelegramControl:
         try:
             fields = {"chat_id": chat, "caption": caption[:1000]}
             if buttons:
-                fields["reply_markup"] = json.dumps({"inline_keyboard": buttons})
+                fields["reply_markup"] = json.dumps({"inline_keyboard": tr_rows(buttons)})
             body, ctype = alarm._multipart(fields, {"animation": ("catch.gif", data, "image/gif")})
             alarm._post(f"{API}/bot{token}/sendAnimation", body, {"Content-Type": ctype})
         except Exception as exc:
-            self.log(f"Telegram: не удалось отправить анимацию: {explain(exc)}")
+            self.log(tr("Telegram: не удалось отправить анимацию: {v0}", v0=explain(exc)))
 
     def _loop(self):
         while not self._stop.is_set():
@@ -265,12 +266,12 @@ class TelegramControl:
                     self._offset = upd["update_id"] + 1
                     self._handle(token, chat, upd)
                 if self._failing:
-                    self.log("Telegram: бот снова на связи")
+                    self.log(tr("Telegram: бот снова на связи"))
                     self._failing = None
             except Exception as exc:
                 reason = explain(exc)
                 if reason != self._failing:   # раньше ошибки бота терялись молча
-                    self.log(f"Telegram: бот не работает — {reason}")
+                    self.log(tr("Telegram: бот не работает — {reason}", reason=reason))
                     self._failing = reason
                 self._stop.wait(5)  # нет сети или неверный токен — пробуем позже
 
@@ -308,8 +309,6 @@ def status_text(engine, blackout_active):
     started = s.get("started")
     runtime = int(time.time() - started) if started and engine.running else 0
     h, rem = divmod(runtime, 3600)
-    state = "работает" if engine.running else "остановлен"
-    screen = "затемнён" if blackout_active else "включён"
-    return (f"Макрос {state}, экран {screen}\n"
-            f"Рыбы: {s.get('catches', 0)}, забросов: {s.get('casts', 0)}\n"
-            f"Время: {h}:{rem // 60:02d}:{rem % 60:02d}")
+    state = tr("работает") if engine.running else tr("остановлен")
+    screen = tr("затемнён") if blackout_active else tr("включён")
+    return tr("Макрос {state}, экран {screen}\nРыбы: {v2}, забросов: {v3}\nВремя: {h}:{v5:02d}:{v6:02d}", state=state, screen=screen, v2=s.get('catches', 0), v3=s.get('casts', 0), h=h, v5=rem // 60, v6=rem % 60)

@@ -7,6 +7,7 @@ Roblox игнорирует часть «программных» событий
 import ctypes
 import sys
 import time
+from .i18n import tr
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -133,7 +134,7 @@ def press_key(name, hold=0.05):
         return
     vk = VK.get(str(name).lower())
     if vk is None:
-        raise ValueError(f"Неизвестная клавиша: {name}")
+        raise ValueError(tr("Неизвестная клавиша: {name}", name=name))
     _send(_key(vk))
     time.sleep(hold)
     _send(_key(vk, up=True))

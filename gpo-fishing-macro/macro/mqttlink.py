@@ -17,6 +17,7 @@ import ssl
 import threading
 import time
 import urllib.parse
+from .i18n import tr
 
 DEFAULT_URL = "wss://broker.emqx.io:8084/mqtt"
 # Несколько брокеров сразу: если сеть телефона или ПК не пускает к одному, панель работает через другой.
@@ -89,7 +90,7 @@ class MqttLink:
         try:
             import paho.mqtt.client as mqtt
         except ImportError as exc:
-            self.error = f"нет paho-mqtt ({exc})"
+            self.error = tr("нет paho-mqtt ({exc})", exc=exc)
             return
         host, port, transport, tls, path = parse_url(self.url)
         c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="gpo-pc-" + os.urandom(6).hex(),
@@ -115,7 +116,7 @@ class MqttLink:
     # ---------- события paho ----------
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         if getattr(reason_code, "is_failure", False):
-            self.error = f"брокер отказал: {reason_code}"
+            self.error = tr("брокер отказал: {reason_code}", reason_code=reason_code)
             return
         self.connected = True
         self.error = None
@@ -126,7 +127,7 @@ class MqttLink:
 
     def _on_disconnect(self, client, userdata, flags, reason_code=None, properties=None):
         if self.connected:
-            self.log(f"Мини-приложение: связь с {self.host} потеряна, переподключаюсь…")
+            self.log(tr("Мини-приложение: связь с {host} потеряна, переподключаюсь…", host=self.host))
         self.connected = False
 
     def _on_message(self, client, userdata, msg):

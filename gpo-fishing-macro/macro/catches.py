@@ -17,7 +17,8 @@ import time
 import numpy as np
 from PIL import Image, ImageDraw
 
-from . import fishdb, ocr, theme
+from . import fishdb, i18n, ocr, theme
+from .i18n import tr
 
 RARITY_EMOJI = {"legendary": "🌈", "epic": "🟣", "rare": "🔵", "common": "⚪", None: "🆕"}
 # Слова уведомления, которые не являются названием рыбы («Fish» оставляем — бывает в названиях)
@@ -25,13 +26,8 @@ NOISE = re.compile(r"\b(you|caught|got|obtained|a|an|the|new|fished|x\d+|\+\d+)\
 
 
 def plural(n, forms):
-    """plural(4, ("вид", "вида", "видов")) → «вида»."""
-    n = abs(int(n))
-    if n % 10 == 1 and n % 100 != 11:
-        return forms[0]
-    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return forms[1]
-    return forms[2]
+    """plural(4, ("вид", "вида", "видов")) → «вида» (в других языках — единственное/множественное)."""
+    return i18n.plural(n, forms)
 
 
 def clean_name(text):
@@ -436,16 +432,15 @@ class CatchLog:
     def summary_text(self, limit=30):
         rows = self._sorted()
         if not rows:
-            return "🐟 Улов пока пуст"
+            return tr("🐟 Улов пока пуст")
         total = sum(c.count for c in rows)
         value = sum(c.count * c.price for c in rows)
-        lines = [f"🐟 Улов: {total} {plural(total, ('рыба', 'рыбы', 'рыб'))}, "
-                 f"{len(rows)} {plural(len(rows), ('вид', 'вида', 'видов'))}"]
+        lines = [tr("🐟 Улов: {total} {v1}, {v2} {v3}", total=total, v1=plural(total, ('рыба', 'рыбы', 'рыб')), v2=len(rows), v3=plural(len(rows), ('вид', 'вида', 'видов')))]
         if value:
             lines.append(f"💰 ≈ {fmt_peli(value)} Peli")
         lines += [f"{RARITY_EMOJI.get(c.rarity, '🆕')} {self.name_of(c)} × {c.count}" for c in rows[:limit]]
         if len(rows) > limit:
-            lines.append(f"…и ещё {len(rows) - limit}")
+            lines.append(tr("…и ещё {v0}", v0=len(rows) - limit))
         return "\n".join(lines)
 
     def status(self, limit=12):
@@ -488,18 +483,18 @@ class CatchLog:
         # Шапка: косая полоса и заголовок, как в окне макроса
         d.polygon([(0, k(14)), (W * 0.56, k(14)), (W * 0.52, k(70)), (0, k(70))], fill=(26, 155, 224, 255))
         d.polygon([(0, k(70)), (W * 0.52, k(70)), (W * 0.517, k(75)), (0, k(75))], fill=theme._hex(theme.HILITE))
-        theme._slanted_text(img, (k(20), k(16)), "УЛОВ", theme._font(k(40)), (255, 255, 255, 255))
+        theme._slanted_text(img, (k(20), k(16)), tr("УЛОВ"), theme._font(k(40)), (255, 255, 255, 255))
         total = sum(c.count for c in rows)
         value = sum(c.count * c.price for c in rows)
-        kinds = f"{len(rows)} {plural(len(rows), ('вид', 'вида', 'видов'))}"
-        theme._slanted_text(img, (W * 0.57, k(16)), f"{total} шт · {kinds}", theme._font(k(22)),
+        kinds = tr("{v0} {v1}", v0=len(rows), v1=plural(len(rows), ('вид', 'вида', 'видов')))
+        theme._slanted_text(img, (W * 0.57, k(16)), tr("{total} шт · {kinds}", total=total, kinds=kinds), theme._font(k(22)),
                             theme._hex(theme.HILITE))
         if value:
             theme._slanted_text(img, (W * 0.57, k(44)), f"≈ {fmt_peli(value)} Peli", theme._font(k(20)),
                                 (255, 214, 90, 255))
         name_font, small_font, count_font = theme._font(k(25)), theme._font(k(15)), theme._font(k(30))
         if not rows:
-            d.text((PAD, HEAD + k(20)), "Пока ничего не поймано", font=name_font, fill=theme._hex(theme.MUTED))
+            d.text((PAD, HEAD + k(20)), tr("Пока ничего не поймано"), font=name_font, fill=theme._hex(theme.MUTED))
         for i, c in enumerate(rows):
             y = HEAD + i * ROW
             d.polygon([(PAD + k(10), y), (W - PAD, y), (W - PAD - k(10), y + ROW - k(8)), (PAD, y + ROW - k(8))],

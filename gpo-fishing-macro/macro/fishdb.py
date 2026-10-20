@@ -18,6 +18,7 @@ import threading
 
 import numpy as np
 from PIL import Image
+from .i18n import tr
 
 RARITIES = {
     "common": {"title": "Обычная", "color": "#e8eef5"},
@@ -156,7 +157,8 @@ def learned_name(fish_id):
 
 
 def rarity_info(rarity):
-    return RARITIES.get(rarity, NEW_RARITY)
+    info = RARITIES.get(rarity, NEW_RARITY)
+    return dict(info, title=tr(info["title"]))   # название редкости — на языке интерфейса
 
 
 def learn_name(fish_id, name):

@@ -14,6 +14,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from .i18n import tr
 
 COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches", "reset_catches"}
 # У бесплатного ntfy.sh лимит ~250 сообщений в сутки с одного IP. Раньше статус уходил каждые 10–30 с —
@@ -24,7 +25,7 @@ WATCH_FOR = 90.0        # после «ping» панель считаем отк
 WATCH_INTERVAL = 15.0   # пока панель открыта — не чаще раза в 15 с
 MIN_INTERVAL = 10.0     # важные события — не чаще раза в 10 с
 COMMAND_MAX_AGE = 60    # команды старше минуты (пришли, пока ПК был выключен) игнорируем
-IMPORTANT = ("running", "alarm", "blackout", "fish_log")
+IMPORTANT = ("running", "alarm", "blackout", "fish_log", "lang")
 MQTT_MIN_INTERVAL = 2.0  # MQTT: статус при изменениях, но не чаще раза в 2 с
 MQTT_EVERY = 30.0        # и раз в 30 с — «я жив»
 
@@ -37,6 +38,7 @@ def webapp_link(cfg):
     """Ссылка на мини-приложение. Секрет и сервер — во фрагменте (#), он не уходит на GitHub."""
     base = str(cfg.get("webapp_url") or "").strip()
     frag = urllib.parse.urlencode({"t": cfg["remote_secret"], "s": cfg.get("ntfy_server") or "https://ntfy.sh",
+                                   "l": cfg.get("language") or "en",
                                    "m": cfg.get("mqtt_url") or ""})
     if base:
         # Версия в адресе: Telegram кэширует страницу, а с новым адресом откроет свежую
@@ -82,7 +84,7 @@ class Remote:
             self._mq_force = True
             self._kick.set()
         elif cmd in COMMANDS and self._enabled():
-            self.log(f"Мини-приложение: {cmd}")
+            self.log(tr("Мини-приложение: {cmd}", cmd=cmd))
             self.on_command(cmd)
 
     def poke(self):
@@ -98,16 +100,16 @@ class Remote:
     def diagnostics(self):
         """Строка для статуса в Telegram: дошёл ли статус до панели."""
         if not self._enabled():
-            return "Панель: выключена"
+            return tr("Панель: выключена")
         if self.mqtt and self.mqtt.connected:
-            return "Панель: на связи через " + ", ".join(self.mqtt.hosts())
+            return tr("Панель: на связи через ") + ", ".join(self.mqtt.hosts())
         if self.mqtt and self.mqtt.error:
-            return f"Панель: MQTT-брокер недоступен ({self.mqtt.error}), запасной канал ntfy"
+            return tr("Панель: MQTT-брокер недоступен ({error}), запасной канал ntfy", error=self.mqtt.error)
         if self._failing and self.last_error:
-            return f"Панель: статус не отправляется ({self.last_error})"
+            return tr("Панель: статус не отправляется ({last_error})", last_error=self.last_error)
         if self.last_ok:
-            return f"Панель: статус отправлен {int(time.time() - self.last_ok)} с назад"
-        return "Панель: ещё не открывали"
+            return tr("Панель: статус отправлен {v0} с назад", v0=int(time.time() - self.last_ok))
+        return tr("Панель: ещё не открывали")
 
     # ---------- статус: ПК → телефон ----------
     def _publish_loop(self):
@@ -163,16 +165,15 @@ class Remote:
                 self._last_time = now
                 self.last_ok = time.time()
                 if self._failing:
-                    self.log("Мини-приложение: статус снова отправляется")
+                    self.log(tr("Мини-приложение: статус снова отправляется"))
                     self._failing = False
             except Exception as exc:
                 self._last_time = now  # нет сети — следующая попытка не раньше MIN_INTERVAL
                 self._last_sent = key  # не повторять то же событие в цикле
                 code = getattr(exc, "code", None)
-                self.last_error = ("лимит сообщений ntfy.sh на сегодня исчерпан" if code == 429 else str(exc))
+                self.last_error = (tr("лимит сообщений ntfy.sh на сегодня исчерпан") if code == 429 else str(exc))
                 if not self._failing:   # пишем один раз, а не каждые 10 секунд
-                    self.log(f"Мини-приложение: не удалось отправить статус в ntfy ({self.last_error}) — "
-                             "на телефоне будет «ПК не в сети»")
+                    self.log(tr("Мини-приложение: не удалось отправить статус в ntfy ({last_error}) — на телефоне будет «ПК не в сети»", last_error=self.last_error))
                     self._failing = True
 
     # ---------- команды: телефон → ПК ----------
@@ -211,5 +212,5 @@ class Remote:
             self._kick.set()
             return
         if cmd in COMMANDS:
-            self.log(f"Мини-приложение: {cmd}")
+            self.log(tr("Мини-приложение: {cmd}", cmd=cmd))
             self.on_command(cmd)

@@ -988,3 +988,68 @@ def test_windows_allows_renaming_running_exe(tmp_path):
     finally:
         proc.kill()
         proc.wait()
+
+
+def _ui_strings():
+    """Все строки интерфейса: tr("…") в коде и подписи из списков (гайд, меню, кнопки бота, редкости)."""
+    import ast
+    import glob
+    import re
+    from macro import fishdb, gui, guide, tgcontrol
+    cyr = re.compile(r"[А-Яа-яЁё]")
+    keys = set()
+    root = os.path.join(os.path.dirname(__file__), "..", "macro")
+    for path in glob.glob(os.path.join(root, "*.py")):
+        if os.path.basename(path).startswith("lang_"):
+            continue
+        for node in ast.walk(ast.parse(open(path, encoding="utf-8").read())):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "tr"
+                    and node.args and isinstance(node.args[0], ast.Constant)):
+                keys.add(node.args[0].value)
+    for page in guide.PAGES:
+        keys |= {page["title"], page["text"]} | {b[0] for b in page.get("buttons", ())}
+        keys |= {f[0] for f in page.get("fields", ())}
+    keys |= {t for _, _, t in gui.App.PAGES}
+    for rows in (tgcontrol.BUTTONS, tgcontrol.CATCH_BUTTONS, tgcontrol.RESET_CONFIRM):
+        keys |= {b["text"] for row in rows for b in row}
+    keys |= {v["title"] for v in list(fishdb.RARITIES.values()) + [fishdb.NEW_RARITY]}
+    keys |= {"рыба", "рыб", "вид", "видов"}
+    return {k for k in keys if cyr.search(k)}
+
+
+def test_every_ui_string_is_translated():
+    """Новая строка интерфейса без перевода или перевод со сломанными {подстановками} — тест падает."""
+    import string
+    from macro import i18n
+    keys = _ui_strings()
+
+    def fields(text):
+        return sorted(f for _, f, _, _ in string.Formatter().parse(text) if f is not None)
+    for code, (name, table) in i18n.LANGUAGES.items():
+        if table is None:
+            continue
+        missing = sorted(k[:60] for k in keys if k not in table)
+        assert not missing, f"{name}: нет перевода для {missing[:5]}"
+        for k in keys:
+            if "{" in k:
+                assert fields(k) == fields(table[k]), f"{name}: подстановки в {k[:60]!r}"
+
+
+def test_language_switch(monkeypatch):
+    from macro import i18n
+    from macro.catches import plural
+    try:
+        i18n.set_language("es")
+        assert i18n.tr("Главная") == "Inicio"
+        assert "3" in i18n.tr("Поймано: {name} (×{count})", name="Fangfish", count=3)
+        assert plural(1, ("рыба", "рыбы", "рыб")) == "pez" and plural(5, ("рыба", "рыбы", "рыб")) == "peces"
+        i18n.set_language("xx")
+        assert i18n.current() == "en" and i18n.tr("Главная") == "Home"
+        i18n.set_language("ru")
+        assert i18n.tr("Главная") == "Главная" and plural(3, ("вид", "вида", "видов")) == "вида"
+    finally:
+        i18n.set_language("ru")
+    cfg = dict(config.DEFAULTS)
+    assert cfg["language"] == "en"                      # новая установка — английский
+    config.migrate(cfg, 5)
+    assert cfg["language"] == "ru"                      # кто уже пользовался — остаётся русский

@@ -461,4 +461,6 @@ T = {
     "видов": "kinds",
     "Новая секретная ссылка создана — старая панель больше не работает. Нажмите «Отправить панель»": "New secret link created — the old panel no longer works. Click “Send panel”",
     "Кнопки управления выключены («Кнопки управления в боте») — тревоги придут, но бот не будет отвечать на кнопки": "Control buttons are off (“Bot control buttons”) — alarms will arrive, but the bot won't respond to buttons",
+    "❤  Поддержать автора": "❤  Support the author",
+    "Спасибо за поддержку! ❤ Страница пожертвований открыта в браузере": "Thank you for your support! ❤ The donation page is open in your browser",
 }

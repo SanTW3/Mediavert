@@ -28,6 +28,7 @@ LLKHF_INJECTED = 0x10
 LLMHF_INJECTED = 0x01
 
 DIGITS = [str(d) for d in range(10)]
+DONATE_URL = "https://www.donationalerts.com/r/etnealy"
 
 # Палитра — macro/theme.py
 from .theme import (ACCENT, ACCENT_HOVER, BG, CARD, CARD_BORDER, FIELD, GREEN, GREEN_HOVER,  # noqa: E402
@@ -349,6 +350,10 @@ class App:
         self.update_btn = ctk.CTkButton(bottom, text="", height=30, corner_radius=6, fg_color=GREEN,
                                         hover_color=GREEN_HOVER, font=(FONT, 11, "bold"), command=self._do_update)
         self._update_btn_box = bottom
+        self._donate_btn = ctk.CTkButton(bottom, text=tr("❤  Поддержать автора"), height=30, corner_radius=6,
+                                         fg_color="#7a2948", hover_color="#9c3459", font=(FONT, 11, "bold"),
+                                         command=self._donate)
+        self._donate_btn.pack(fill="x", pady=(0, 6))
         self._guide_btn = ctk.CTkButton(bottom, text=tr("?  Гайд по настройке"), height=30, corner_radius=6,
                                         fg_color=FIELD, hover_color=ACCENT, font=(FONT, 11), command=self.open_guide)
         self._guide_btn.pack(fill="x")
@@ -399,6 +404,12 @@ class App:
             self._on_update_found(self._update, silent=True)
         self.show_page(page or "home")
         self.remote.poke()
+
+    def _donate(self):
+        """Страница пожертвований автору — в обычном браузере."""
+        import webbrowser
+        webbrowser.open(DONATE_URL)
+        self.log(tr("Спасибо за поддержку! ❤ Страница пожертвований открыта в браузере"))
 
     def show_page(self, key):
         for k, frame in self.pages.items():
@@ -1290,7 +1301,7 @@ class App:
         self._update = upd
         self.update_btn.configure(text=tr("⬆ Обновить до {version}", version=upd.version))
         if not self.update_btn.winfo_manager():
-            self.update_btn.pack(fill="x", pady=(0, 6), before=self._guide_btn)
+            self.update_btn.pack(fill="x", pady=(0, 6), before=self._donate_btn)
         if first:
             self.log(tr("Доступна новая версия {version} — нажмите «Обновить» слева внизу", version=upd.version))
             if self.tg._creds()[0]:

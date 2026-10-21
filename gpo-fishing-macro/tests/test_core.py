@@ -651,6 +651,12 @@ def test_migration_turns_catch_log_on(tmp_path):
         json.dump({"config_version": 2, "mqtt_url": "wss://broker.emqx.io:8084/mqtt"}, f)
     assert "broker.hivemq.com" in config.load(path)["mqtt_url"]
     assert "shiftr.io:443" in config.load(path)["mqtt_url"]
+    # v7: мини-приложение переехало из gpo-macro в FishPilot, свой адрес не трогаем
+    for old, new in (("https://santw3.github.io/gpo-macro/", config.DEFAULTS["webapp_url"]),
+                     ("https://me.github.io/panel/", "https://me.github.io/panel/")):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"config_version": 6, "webapp_url": old}, f)
+        assert config.load(path)["webapp_url"] == new
 
 
 def test_catch_area_defaults_to_center_of_roblox(monkeypatch):

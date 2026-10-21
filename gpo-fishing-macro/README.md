@@ -1,3 +1,6 @@
+> **FishPilot has moved to [SanTW3/FishPilot](https://github.com/SanTW3/FishPilot).** This folder is kept only so that
+> older installs can update; new code and releases are there.
+
 # FishPilot — fishing autopilot for GPO
 
 *English · [Русский](README.ru.md)*
@@ -14,7 +17,7 @@ and **rings your phone** when something goes wrong.
 
 ## Install
 
-1. Download **FishPilot-win64.zip** from the [gpo-latest](https://github.com/SanTW3/Mediavert/releases/tag/gpo-latest) release.
+1. Download **FishPilot-win64.zip** from the [latest release](https://github.com/SanTW3/FishPilot/releases/latest).
 2. Unpack it to any folder (don't run it from inside the archive) and start `FishPilot\FishPilot.exe`.
    No Python needed.
 3. Windows SmartScreen may say "Windows protected your PC" — the app has no paid code signature.
@@ -64,7 +67,20 @@ public MQTT brokers (hashed topic, HMAC-signed), and the update check to GitHub.
 ## Build from source
 
 Python 3.10+: `run.bat` starts the app, `build.bat` builds `dist\FishPilot` and `dist\FishPilot-win64.zip`.
-Tests: `python -m pytest tests`. Releases are published by pushing a `fishpilot-vX.Y.Z` tag.
+Tests: `python -m pytest tests`.
+
+To release, bump `__version__` in `macro/__init__.py`, then push a `vX.Y.Z` tag or run the **Build FishPilot**
+workflow manually with **publish** checked. CI tests, builds, self-checks the exe and publishes release `vX.Y.Z`;
+installed copies pick it up from the latest release.
+
+## Telegram mini app
+
+The live panel opened from the bot is `index.html` in this repository, served by GitHub Pages at
+https://santw3.github.io/FishPilot/ (Settings → Pages → Deploy from a branch → `main`, `/ (root)`).
+It has no server of its own: it talks to the PC through public MQTT brokers (`vendor/mqtt.min.js`) with ntfy as a
+fallback. Topic names are a hash of a secret, and every status message and command is signed with HMAC-SHA256
+and carries a time and a nonce, so without the link nobody can control the macro or replay a command.
+The secret travels in the link fragment (`#…`), which is never sent to GitHub.
 
 Detailed documentation (mini-game tuning, automation, HUD, catch log) is in [README.ru.md](README.ru.md).
 
@@ -72,3 +88,4 @@ Detailed documentation (mini-game tuning, automation, HUD, catch log) is in [REA
 
 [MIT](LICENSE). Third-party libraries and their licenses are listed in `THIRD_PARTY_LICENSES.txt` inside the
 archive. pynput (LGPL-3.0) is used unmodified and can be replaced in the `_internal` folder.
+The mini app includes [MQTT.js](https://github.com/mqttjs/MQTT.js) (MIT).

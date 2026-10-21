@@ -9,7 +9,7 @@ import re
 import shutil
 import sys
 
-CONFIG_VERSION = 6
+CONFIG_VERSION = 7
 
 DEFAULTS = {
     "config_version": CONFIG_VERSION,
@@ -110,7 +110,7 @@ DEFAULTS = {
     # Мини-приложение Telegram (страница на GitHub Pages, связь через ntfy)
     "remote_enabled": True,
     "remote_secret": "",
-    "webapp_url": "https://santw3.github.io/gpo-macro/",
+    "webapp_url": "https://santw3.github.io/FishPilot/",
     # Брокеры через пробел; пусто — только ntfy
     "mqtt_url": ("wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt "
                  "wss://mqtt.eclipseprojects.io:443/mqtt wss://public:public@public.cloud.shiftr.io:443/"),
@@ -292,6 +292,9 @@ def migrate(cfg, version):
         # v6: появились языки, по умолчанию английский. Кто уже пользовался программой — тот видел её
         # по-русски, оставляем русский (сменить можно в «Программа → Язык»)
         cfg["language"] = "ru"
+    if version < 7 and str(cfg.get("webapp_url") or "").rstrip("/").lower() == "https://santw3.github.io/gpo-macro":
+        # v7: репозиторий мини-приложения переименован в FishPilot — старый адрес Pages больше не открывается
+        cfg["webapp_url"] = DEFAULTS["webapp_url"]
     # Пустые «свои названия» скрывали название рыбы в каталоге
     cfg["fish_names"] = {k: v for k, v in dict(cfg.get("fish_names") or {}).items() if str(v or "").strip()}
     cfg["config_version"] = CONFIG_VERSION

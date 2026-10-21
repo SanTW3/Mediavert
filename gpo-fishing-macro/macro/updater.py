@@ -1,13 +1,13 @@
 """Обновление прямо из программы.
 
 FishPilot раздаётся zip-архивом с папкой (FishPilot.exe + _internal) — так меньше ложных срабатываний
-антивирусов, чем у одного exe. Сборка с тегом fishpilot-vX.Y.Z кладёт в релиз gpo-latest:
-    FishPilot-win64.zip     — папка программы;
-    GPO-Fishing-Macro.exe   — одиночный exe для версий 1.x (они умеют обновлять только его).
-В описании релиза:
-    version: 2.0.0
-    sha256: …          ← exe (по первой строке sha256 ищут версии 1.x)
-    zip_sha256: …      ← zip
+антивирусов, чем у одного exe. Каждая версия — релиз vX.Y.Z в SanTW3/FishPilot (последний помечен latest)
+с файлом FishPilot-win64.zip, в описании:
+    version: 2.0.1
+    zip_sha256: …
+
+До 2.0.1 программа жила в SanTW3/Mediavert и проверяла там релиз gpo-latest (версии 1.x качали оттуда
+одиночный exe). Там лежит «мост» 2.0.1 — после него все проверяют уже этот репозиторий.
 
 Обновление папки: zip скачивается и проверяется (SHA-256), распаковывается в %APPDATA%\\FishPilot\\update,
 затем маленький скрипт ждёт, пока программа закроется, копирует новые файлы в папку программы
@@ -29,10 +29,8 @@ from dataclasses import dataclass
 from . import __version__
 from .i18n import tr
 
-DEFAULT_REPO = "SanTW3/Mediavert"   # адрес обновлений зашит в программу, из настроек его не берём
-TAG = "gpo-latest"
+DEFAULT_REPO = "SanTW3/FishPilot"   # адрес обновлений зашит в программу, из настроек его не берём
 ZIP_ASSET = "FishPilot-win64.zip"
-LEGACY_ASSET = "GPO-Fishing-Macro.exe"
 EXE_NAME = "FishPilot.exe"
 TIMEOUT = 20
 MAX_SIZE = 300 * 1024 * 1024
@@ -87,7 +85,7 @@ def parse_release(data):
 def check(repo=DEFAULT_REPO):
     """Новая версия или None. Ошибки сети пробрасываются. Одиночный exe переезжает в папку даже на той же
     версии — иначе он так и остался бы в старом формате."""
-    with _get(f"https://api.github.com/repos/{repo}/releases/tags/{TAG}") as resp:
+    with _get(f"https://api.github.com/repos/{repo}/releases/latest") as resp:
         update = parse_release(json.loads(resp.read()))
     if update is None:
         return None

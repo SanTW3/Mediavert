@@ -1065,3 +1065,17 @@ def test_restarted_exe_gets_clean_pyinstaller_env():
     env = updater.clean_env({"PATH": "x", "_MEIPASS2": "C:/tmp/_MEI1", "_PYI_APPLICATION_HOME_DIR": "C:/tmp/_MEI1",
                              "_PYI_PARENT_PROCESS_LEVEL": "1"})
     assert env == {"PATH": "x", "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+
+
+def test_no_translated_default_arguments():
+    """tr() в значении аргумента по умолчанию вычисляется при импорте — до выбора языка. Так нельзя."""
+    import ast
+    import glob
+    root = os.path.join(os.path.dirname(__file__), "..", "macro")
+    for path in glob.glob(os.path.join(root, "*.py")):
+        for node in ast.walk(ast.parse(open(path, encoding="utf-8").read())):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + [d for d in node.args.kw_defaults if d is not None]:
+                    calls = [n for n in ast.walk(default) if isinstance(n, ast.Call)
+                             and isinstance(n.func, ast.Name) and n.func.id == "tr"]
+                    assert not calls, f"{os.path.basename(path)}: {node.name}() — tr() в аргументе по умолчанию"

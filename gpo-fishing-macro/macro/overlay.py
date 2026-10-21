@@ -63,7 +63,11 @@ class AreaSelector(_Overlay):
     GRAB = 10        # насколько близко к краю считается «за край»
     MIN = 8
 
-    def __init__(self, root, current, callback, hint=tr("Выделите мышью область с полосами мини-игры")):
+    def __init__(self, root, current, callback, hint=None):
+        # Подсказка по умолчанию — здесь, а не в аргументе: значение по умолчанию вычисляется один раз
+        # при запуске, ещё до загрузки языка из настроек, и было всегда по-русски
+        if hint is None:
+            hint = tr("Выделите мышью область с полосами мини-игры")
         super().__init__(root, hint + tr(".  Тяните за углы и края, Enter или двойной клик — сохранить"))
         self.callback = callback
         self.box = None           # [x0, y0, x1, y1] в координатах холста

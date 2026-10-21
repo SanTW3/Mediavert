@@ -308,15 +308,29 @@ def test_telegram_control_accepts_only_own_chat():
     assert [m for m, _ in sent] == ["answerCallbackQuery"]
 
 
+def _signed_cmd(secret, cmd, t=None, nonce="n1"):
+    import hashlib
+    import hmac as hm
+    t = int((time.time() if t is None else t) * 1000)
+    h = hm.new(secret.encode(), f"{cmd}|{t}|{nonce}".encode(), hashlib.sha256).hexdigest()
+    return json.dumps({"c": cmd, "t": t, "n": nonce, "h": h})
+
+
+TG = {"telegram_token": "1" * 9 + ":" + "X" * 35, "telegram_chat_id": "42"}
+
+
 def test_remote_publishes_status_and_takes_commands():
-    from macro import remote
+    from macro import mqttlink, remote
     posted, got = [], []
     now = time.time()
+    secret = "S3CRET-secret"
     stream = [
         {"event": "open"},
-        {"event": "message", "time": now - 600, "message": "stop"},   # старая — игнор
-        {"event": "message", "time": now, "message": "rm -rf"},       # не команда — игнор
-        {"event": "message", "time": now, "message": "screen_on"},
+        {"event": "message", "time": now, "message": "stop"},                                  # без подписи
+        {"event": "message", "time": now, "message": _signed_cmd(secret, "stop", now - 600, "a")},  # старая
+        {"event": "message", "time": now, "message": _signed_cmd("guess", "stop", now, "b")},  # чужой секрет
+        {"event": "message", "time": now, "message": _signed_cmd(secret, "screen_on", now, "c")},
+        {"event": "message", "time": now, "message": _signed_cmd(secret, "screen_on", now, "c")},  # повтор
     ]
 
     class H(BaseHTTPRequestHandler):
@@ -339,20 +353,32 @@ def test_remote_publishes_status_and_takes_commands():
     from http.server import ThreadingHTTPServer
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S3CRET", mqtt_url="")
+    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret=secret,
+               mqtt_url="", **TG)
     r = remote.Remote(cfg, lambda: {"running": True, "catches": 3}, got.append, log=lambda t: None)
+    r._started = now - 5
     r.poke()
     deadline = time.time() + 5
     while (not posted or not got) and time.time() < deadline:
         time.sleep(0.05)
+    time.sleep(0.3)
     r.stop()
     srv.shutdown()
-    assert posted[0][0] == "/gpo-S3CRET-status"
-    assert posted[0][1]["catches"] == 3 and posted[0][1]["running"] is True and "ts" in posted[0][1]
+    status_topic = remote.topics(secret)[0]
+    assert posted[0][0] == "/" + status_topic and secret not in status_topic     # секрета в адресе нет
+    body = posted[0][1]
+    import hashlib
+    import hmac as hm
+    assert body["h"] == hm.new(secret.encode(), body["d"].encode(), hashlib.sha256).hexdigest()
+    data = json.loads(body["d"])
+    assert data["catches"] == 3 and data["running"] is True and "ts" in data
     assert got == ["screen_on"]
     link = remote.webapp_link(dict(cfg, webapp_url="https://santw3.github.io/gpo-macro/"))
     from macro import __version__
-    assert link.startswith(f"https://santw3.github.io/gpo-macro/?v={__version__}#t=S3CRET&s=http")
+    assert link.startswith(f"https://santw3.github.io/gpo-macro/?v={__version__}#t={secret}&s=http")
+    # Без Telegram панель открыть нечем — к серверам не подключаемся
+    assert not remote.Remote(dict(config.DEFAULTS, mqtt_url=""), dict, got.append, log=print)._enabled()
+    assert mqttlink.unpack_command(secret, _signed_cmd(secret, "stop", now - 30, "z"), {}, not_before=now) is None
 
 
 def test_remote_saves_ntfy_quota(monkeypatch):
@@ -364,7 +390,7 @@ def test_remote_saves_ntfy_quota(monkeypatch):
 
     class H(BaseHTTPRequestHandler):
         def do_POST(self):
-            posted.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            posted.append(json.loads(json.loads(self.rfile.read(int(self.headers["Content-Length"])))["d"]))
             self.send_response(200)
             self.end_headers()
 
@@ -380,7 +406,8 @@ def test_remote_saves_ntfy_quota(monkeypatch):
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     state = {"running": True, "catches": 0}
-    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S", mqtt_url="")
+    cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S", mqtt_url="",
+               **TG)
     r = remote.Remote(cfg, lambda: dict(state), lambda c: None, log=lambda t: None)
 
     def settle(n):
@@ -396,7 +423,7 @@ def test_remote_saves_ntfy_quota(monkeypatch):
         state["catches"] = 5
         settle(1)
         assert len(posted) == 1                # улов без открытой панели не шлём
-        r._handle_line(json.dumps({"event": "message", "time": time.time(), "message": "ping"}))
+        r._handle_line(json.dumps({"event": "message", "time": time.time(), "message": _signed_cmd("S", "ping")}))
         settle(2)
         assert len(posted) == 2 and posted[-1]["catches"] == 5
         state["catches"] = 6                   # панель открыта — изменения уходят
@@ -934,17 +961,27 @@ def test_black_screen_checks_roblox_window_and_rechecks(monkeypatch):
     assert cfg["black_threshold"] == 0.85
 
 
-def test_updater_downloads_checks_and_swaps_exe(tmp_path, monkeypatch):
+def _zip_bytes(files):
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def test_updater_zip_flow(tmp_path, monkeypatch):
     import hashlib
     from macro import updater
-    payload = b"MZ new exe" * 1000
-    sha = hashlib.sha256(payload).hexdigest()
-    release = {"body": f"Автообновление\n\nversion: 9.9.9\nsha256: {sha}\ncommit: abc",
-               "assets": [{"name": "GPO-Fishing-Macro.exe", "browser_download_url": "http://x/exe", "size": len(payload)}]}
+    payload = _zip_bytes({"FishPilot/FishPilot.exe": b"MZ new", "FishPilot/_internal/lib.dll": b"dll"})
+    zsha = hashlib.sha256(payload).hexdigest()
+    release = {"body": f"FishPilot\n\nversion: 9.9.9\nsha256: {'a' * 64}\nzip_sha256: {zsha}\ncommit: abc",
+               "assets": [{"name": "FishPilot-win64.zip", "browser_download_url": "http://x/zip", "size": len(payload)},
+                          {"name": "GPO-Fishing-Macro.exe", "browser_download_url": "http://x/exe", "size": 5}]}
     upd = updater.parse_release(release)
-    assert upd.version == "9.9.9" and upd.sha256 == sha
+    assert upd.version == "9.9.9" and upd.sha256 == zsha and upd.url == "http://x/zip"
+    assert updater.parse_release({"body": "version: 1.0.0\nsha256: " + "a" * 64, "assets": []}) is None
     assert updater.is_newer("1.10.0", "1.9.9") and not updater.is_newer("1.5.0", "1.5.0")
-    assert updater.parse_release({"body": "", "assets": []}) is None
 
     class Resp(io.BytesIO):
         def __enter__(self):
@@ -955,45 +992,50 @@ def test_updater_downloads_checks_and_swaps_exe(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "_get", lambda url, timeout=20: Resp(json.dumps(release).encode() if "api." in url
                                                                         else payload))
     assert updater.check("o/r").version == "9.9.9"
-    exe = tmp_path / "GPO-Fishing-Macro.exe"
-    exe.write_bytes(b"MZ old exe")
-    (tmp_path / "config.json").write_text("{}")
+    work = tmp_path / "update"
     got = []
-    new = updater.download(upd, str(exe) + ".new", got.append)
-    assert got[-1] == 1.0 and open(new, "rb").read() == payload
-    updater.install(new, str(exe), launch=False)
-    assert exe.read_bytes() == payload and (tmp_path / "GPO-Fishing-Macro.old.exe").read_bytes() == b"MZ old exe"
-    assert (tmp_path / "config.json").exists()                       # настройки на месте
-    updater.cleanup(str(exe))
-    assert not (tmp_path / "GPO-Fishing-Macro.old.exe").exists()
-    # Повреждённый файл не ставится
-    bad = updater.Update("9.9.9", "http://x/exe", "0" * 64, len(payload))
+    z = updater.download(upd, str(work / "FishPilot-win64.zip"), got.append)
+    assert got[-1] == 1.0
+    app = tmp_path / "app"
+    app.mkdir()
+    target = updater.install(z, str(work), app_dir=str(app), launch=False)
+    assert target == str(app)
+    script = (work / "install-update.cmd").read_text(encoding="utf-8")
+    assert "robocopy" in script and str(app) in script and "--wait-instance" in script
+    assert (work / "new" / "FishPilot" / "FishPilot.exe").read_bytes() == b"MZ new"
+    # Повреждённый файл и опасные пути в архиве не ставятся
+    bad = updater.Update("9.9.9", "http://x/zip", "0" * 64, len(payload))
     with pytest.raises(ValueError):
-        updater.download(bad, str(exe) + ".new")
-    assert not os.path.exists(str(exe) + ".new")
+        updater.download(bad, str(work / "bad.zip"))
+    evil = tmp_path / "evil.zip"
+    evil.write_bytes(_zip_bytes({"../escape.txt": b"x", "FishPilot.exe": b"MZ"}))
+    with pytest.raises(ValueError):
+        updater.extract(str(evil), str(tmp_path / "x"))
 
 
-def test_windows_allows_renaming_running_exe(tmp_path):
-    """На этом держится обновление: запущенный exe Windows переименовать даёт (только Windows)."""
+def test_windows_update_script_replaces_files_after_exit(tmp_path):
+    """Скрипт обновления по-настоящему: ждёт выхода процесса, копирует файлы robocopy (только Windows)."""
     if sys.platform != "win32":
         pytest.skip("только Windows")
     import shutil
     import subprocess
     from macro import updater
-    exe = tmp_path / "GPO-Fishing-Macro.exe"
-    shutil.copy(sys.executable, exe)
-    proc = subprocess.Popen([str(exe), "-c", "import time; time.sleep(20)"])
-    try:
-        time.sleep(1)
-        new = tmp_path / "GPO-Fishing-Macro.exe.new"
-        new.write_bytes(b"new")
-        updater.install(str(new), str(exe), launch=False)
-        assert exe.read_bytes() == b"new" and (tmp_path / "GPO-Fishing-Macro.old.exe").exists()
-    finally:
-        proc.kill()
-        proc.wait()
-
-
+    app, new = tmp_path / "app", tmp_path / "new" / "FishPilot"
+    app.mkdir()
+    (new / "_internal").mkdir(parents=True)
+    whoami = os.path.join(os.environ.get("SystemRoot", r"C:\\Windows"), "System32", "whoami.exe")
+    shutil.copy(whoami, app / "FishPilot.exe")                 # «старая версия»
+    shutil.copy(whoami, new / "FishPilot.exe")
+    (new / "_internal" / "lib.txt").write_text("v2")
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3)"])
+    script = tmp_path / "install-update.cmd"
+    script.write_text(updater.install_script(str(new), str(app), proc.pid), encoding="utf-8")
+    run = subprocess.Popen(["cmd.exe", "/c", str(script)])
+    time.sleep(1)
+    assert not (app / "_internal" / "lib.txt").exists()       # пока программа работает — ничего не трогаем
+    proc.wait()
+    run.wait(timeout=30)
+    assert (app / "_internal" / "lib.txt").read_text() == "v2"
 def _ui_strings():
     """Все строки интерфейса: tr("…") в коде и подписи из списков (гайд, меню, кнопки бота, редкости)."""
     import ast
@@ -1003,7 +1045,7 @@ def _ui_strings():
     cyr = re.compile(r"[А-Яа-яЁё]")
     keys = set()
     root = os.path.join(os.path.dirname(__file__), "..", "macro")
-    for path in glob.glob(os.path.join(root, "*.py")):
+    for path in glob.glob(os.path.join(root, "*.py")) + [os.path.join(root, "..", "gpo_macro.py")]:
         if os.path.basename(path).startswith("lang_"):
             continue
         for node in ast.walk(ast.parse(open(path, encoding="utf-8").read())):
@@ -1012,7 +1054,7 @@ def _ui_strings():
                 keys.add(node.args[0].value)
     for page in guide.PAGES:
         keys |= {page["title"], page["text"]} | {b[0] for b in page.get("buttons", ())}
-        keys |= {f[0] for f in page.get("fields", ())}
+        keys |= {f[0] for f in page.get("fields", ())} | ({page["note"]} if page.get("note") else set())
     keys |= {t for _, _, t in gui.App.PAGES}
     for rows in (tgcontrol.BUTTONS, tgcontrol.CATCH_BUTTONS, tgcontrol.RESET_CONFIRM):
         keys |= {b["text"] for row in rows for b in row}
@@ -1079,3 +1121,63 @@ def test_no_translated_default_arguments():
                     calls = [n for n in ast.walk(default) if isinstance(n, ast.Call)
                              and isinstance(n.func, ast.Name) and n.func.id == "tr"]
                     assert not calls, f"{os.path.basename(path)}: {node.name}() — tr() в аргументе по умолчанию"
+
+
+def test_number_input_validation():
+    assert config.parse_number("cast_hold", "0,5") == 0.5            # запятая как в ru/es/pt
+    assert config.parse_number("cast_hold", "nan") is None
+    assert config.parse_number("cast_hold", "inf") is None
+    assert config.parse_number("micro_delay", "-1") is None           # отрицательная пауза ломала ловлю
+    assert config.parse_number("scan_fps", "60", int) == 60 and config.parse_number("scan_fps", "6.5", int) is None
+    assert config.parse_number("black_threshold", "1.5") is None
+
+
+def test_broken_or_shared_config_is_safe(tmp_path):
+    path = str(tmp_path / "config.json")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("[]")                                                  # не объект — раньше падало при запуске
+    cfg = config.load(path)
+    assert config.LAST_LOAD_ERROR and os.path.exists(path + ".bad") and cfg["kp"] == config.DEFAULTS["kp"]
+    # Неверные типы значений → значения по умолчанию
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"config_version": 6, "kp": "abc", "area": [1, 2, "x", 4], "hud_enabled": "yes",
+                   "webapp_url": "https://evil.example/panel", "update_repo": "evil/repo"}, f)
+    cfg = config.load(path)
+    assert cfg["kp"] == config.DEFAULTS["kp"] and cfg["area"] is None and cfg["hud_enabled"] is True
+    assert cfg["webapp_url"] == config.DEFAULTS["webapp_url"] and "update_repo" not in cfg
+
+
+def test_secrets_are_kept_apart_from_config(tmp_path):
+    path = str(tmp_path / "config.json")
+    cfg = config.load(path)
+    cfg.update(telegram_token="1" * 9 + ":" + "Z" * 35, telegram_chat_id="42", kp=1.5)
+    config.save(cfg, path)
+    text = open(path, encoding="utf-8").read()
+    assert "ZZZZ" not in text and "telegram_chat_id" not in text and "remote_secret" not in text
+    again = config.load(path)
+    assert again["telegram_token"] == cfg["telegram_token"] and again["remote_secret"] == cfg["remote_secret"]
+    # Экспорт — без секретов; импорт чужих настроек не трогает свои секреты
+    out = str(tmp_path / "share.json")
+    config.export_settings(again, out)
+    assert "ZZZZ" not in open(out, encoding="utf-8").read()
+    mine = config.load(path)
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump({"kp": 2.0, "telegram_token": "stolen", "remote_secret": "x"}, f)
+    assert config.import_settings(mine, out) == 1
+    assert mine["kp"] == 2.0 and mine["telegram_token"] == cfg["telegram_token"]
+    # Старая версия держала секреты в config.json — они подхватываются и переезжают при сохранении
+    old = str(tmp_path / "old" / "config.json")
+    os.makedirs(os.path.dirname(old))
+    with open(old, "w", encoding="utf-8") as f:
+        json.dump({"config_version": 6, "telegram_token": "T" * 10, "remote_secret": "abcdefgh12"}, f)
+    legacy = config.load(old)
+    assert legacy["telegram_token"] == "T" * 10 and legacy["remote_secret"] == "abcdefgh12"
+    config.save(legacy, old)
+    assert "TTTT" not in open(old, encoding="utf-8").read() and config.load(old)["telegram_token"] == "T" * 10
+
+
+def test_diagnostics_hide_secrets():
+    from macro import applog
+    cfg = dict(config.DEFAULTS, telegram_token="1" * 9 + ":" + "Q" * 35, remote_secret="supersecret123")
+    text = applog.redact("error with " + cfg["telegram_token"] + " and supersecret123", cfg)
+    assert "QQQQ" not in text and "supersecret123" not in text

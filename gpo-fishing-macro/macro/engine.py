@@ -49,7 +49,7 @@ class AlarmManager:
         png = None
         if with_screenshot and self.cfg.get("alarm_screenshot"):
             try:
-                png = screen.screenshot_png()
+                png = screen.game_screenshot()
             except Exception:
                 png = None
         threading.Thread(target=self._loop, args=(reason, png), daemon=True).start()
@@ -97,7 +97,9 @@ class MacroEngine:
             return
         problems = self.validate()
         if problems:
-            self.on_status(tr("Не настроено: ") + "; ".join(problems), "red")
+            text = tr("Не настроено: ") + "; ".join(problems)
+            self.on_status(text, "red")
+            self.log(text)      # в статус целиком не влезает
             return
         self.alarms.acknowledge()
         self._stop.clear()
@@ -109,9 +111,15 @@ class MacroEngine:
         self._stop.set()
         self.alarms.acknowledge()
 
+    def join(self, timeout=None):
+        """Дождаться, пока поток ловли закончится (и отпустит ЛКМ)."""
+        if self._thread is not None:
+            self._thread.join(timeout)
+
     def toggle(self):
         if self.running:
-            self.stop()
+            if not self._stop.is_set():   # уже останавливается — повторный F1 ничего не делает
+                self.stop()
         else:
             self.start()
 
@@ -167,6 +175,8 @@ class MacroEngine:
         дольше этого времени, повторяем событие, чтобы игра не «потеряла» зажатую/отпущенную кнопку."""
         now = time.monotonic()
         stale = resend_after is not None and resend_after > 0 and now - self._mouse_sent >= resend_after
+        if held and not self._mouse_held:
+            self._ensure_roblox()        # нажимать ЛКМ можно только в игре
         if held != self._mouse_held or (stale and held):
             winput.mouse_down() if held else winput.mouse_up()
         elif stale:
@@ -179,11 +189,31 @@ class MacroEngine:
     def _delay(self, key):
         self._sleep(float(self.cfg[key]))
 
+    def _ensure_roblox(self):
+        """Клавиши и клики — только в Roblox. Если игра не на переднем плане, ничего не нажимаем, а ждём:
+        иначе цифры, E и клики уходили в Discord или браузер. Долго нет окна — тревога сторожа."""
+        if not winput.IS_WINDOWS or winput.foreground_title() == "Roblox":
+            return
+        if self._mouse_held:
+            winput.mouse_up()
+            self._mouse_held = False
+        winput.focus_roblox()
+        self._stop.wait(0.3)
+        if winput.foreground_title() == "Roblox":
+            return
+        self.log(tr("Окно Roblox не активно — макрос ничего не нажимает и ждёт, пока вы вернётесь в игру"))
+        self.on_status(tr("Ждём окно Roblox"), "orange")
+        while winput.foreground_title() != "Roblox":
+            self._sleep(0.5)
+        self.log(tr("Окно Roblox снова активно — продолжаю"))
+
     def _click(self, point, delay_key):
+        self._ensure_roblox()
         winput.click(*point)
         self._delay(delay_key)
 
     def _key(self, name, delay_key):
+        self._ensure_roblox()
         winput.press_key(name)
         self._delay(delay_key)
 
@@ -233,6 +263,7 @@ class MacroEngine:
             if time.monotonic() > deadline:
                 self._raise_alarm(tr("Чёрный экран не уходит {v0:g} с — нужна ваша помощь", v0=cfg['black_max_sec']))
                 return
+            self._ensure_roblox()
             winput.press_key(cfg["black_spam_key"])
             self._delay("black_spam_delay")
         self.log(tr("Чёрный экран убран"))
@@ -307,6 +338,7 @@ class MacroEngine:
             self._click(cfg["buy_left"], "buy_click_delay")
             self._click(cfg["buy_middle"], "buy_click_delay")
             if cfg.get("buy_type_amount"):
+                self._ensure_roblox()
                 winput.type_text(every)
                 self._delay("buy_type_delay")
             self._click(cfg["buy_left"], "buy_click_delay")
@@ -322,6 +354,7 @@ class MacroEngine:
     def _cast(self):
         cfg = self.cfg
         self.on_status(tr("Заброс"), "blue")
+        self._ensure_roblox()
         winput.move_to(*cfg["water_point"])
         self._delay("cursor_delay")
         self._set_mouse(True)

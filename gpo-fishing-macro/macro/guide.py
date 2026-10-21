@@ -21,6 +21,10 @@ PAGES = [
             "слева внизу.\n\n"
             "Все настройки сохраняются сами. На «Главной» видно, что уже готово, а что ещё нет."
         ),
+        "note": (
+            "FishPilot бесплатный (лицензия MIT) и не связан с Roblox и Grand Piece Online. Автоматизация "
+            "может нарушать правила игры — пользуйтесь на свой риск. Программа предоставляется «как есть»."
+        ),
     },
     {
         "title": "1. Подготовка в игре",
@@ -151,6 +155,9 @@ class Guide(ctk.CTkToplevel):
             self._language_picker()
         tk.Label(self.body, text=tr(page["text"]), bg=CARD, fg=TEXT, font=("Segoe UI", 10), justify="left",
                  anchor="nw", wraplength=480).pack(anchor="w", fill="x")
+        if page.get("note"):
+            tk.Label(self.body, text=tr(page["note"]), bg=CARD, fg=MUTED, font=("Segoe UI", 8), justify="left",
+                     anchor="nw", wraplength=480).pack(anchor="w", fill="x", pady=(10, 0))
         for label, key, secret in page.get("fields", ()):
             row = tk.Frame(self.body, bg=CARD)
             row.pack(fill="x", pady=(10, 0))

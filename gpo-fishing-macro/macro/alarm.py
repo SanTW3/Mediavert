@@ -8,6 +8,7 @@
 """
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -50,11 +51,16 @@ def send_telegram(token, chat_id, text, screenshot_png=None, reply_markup=None):
         fields = {"chat_id": chat_id, "caption": text[:1000]}
         if reply_markup:
             fields["reply_markup"] = reply_markup
-        body, ctype = _multipart(fields, {"photo": ("screen.png", screenshot_png, "image/png")})
-        _post(base + "/sendPhoto", body, {"Content-Type": ctype})
-    else:
-        data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
-        _post(base + "/sendMessage", data)
+        jpeg = screenshot_png[:2] == b"\xff\xd8"
+        photo = ("screen.jpg", screenshot_png, "image/jpeg") if jpeg else ("screen.png", screenshot_png, "image/png")
+        body, ctype = _multipart(fields, {"photo": photo})
+        try:
+            _post(base + "/sendPhoto", body, {"Content-Type": ctype})
+            return
+        except urllib.error.URLError:
+            pass      # картинку не приняли (размер и т.п.) — пусть дойдёт хотя бы текст тревоги
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+    _post(base + "/sendMessage", data)
 
 
 def send_pushover(user, token, title, message):
@@ -79,7 +85,7 @@ def channels(cfg):
 
 def send_alarm(cfg, reason, screenshot_png=None, log=print):
     """Шлёт тревогу во все настроенные каналы. Возвращает число успешных отправок."""
-    title = tr("GPO Macro: что-то пошло не так!")
+    title = tr("FishPilot: что-то пошло не так!")
     message = f"{reason}\n{time.strftime('%H:%M:%S')}"
     sent = 0
     jobs = []

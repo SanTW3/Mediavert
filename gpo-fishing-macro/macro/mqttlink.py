@@ -5,7 +5,7 @@ MQTT-брокера лимита на сообщения нет, и послед
 панель видит его сразу после открытия.
 
 Публичный брокер видят все: любой может подписаться на «#». Поэтому:
-  * имя топика — хэш секрета, сам секрет по сети не передаётся;
+  * имя топика — хэш секрета, сам секрет по сети не передаётся (в ntfy тоже — см. remote.topics);
   * статус и команды подписаны HMAC-SHA256 с секретом: чужая команда без секрета не пройдёт;
   * у команды есть время и случайный nonce — перехваченную команду нельзя повторить.
 """
@@ -40,8 +40,10 @@ def pack_status(secret, status):
     return json.dumps({"d": data, "h": sign(secret, data)}, ensure_ascii=False).encode("utf-8")
 
 
-def unpack_command(secret, payload, seen, now=None):
-    """Команда из подписанного сообщения панели или None (подделка, повтор, старая)."""
+def unpack_command(secret, payload, seen, now=None, not_before=None):
+    """Команда из подписанного сообщения панели или None (подделка, повтор, старая).
+    not_before — время запуска программы: команды, отправленные до него, не выполняем (иначе после
+    перезапуска можно было бы повторить перехваченную команду, пока она моложе минуты)."""
     try:
         msg = json.loads(payload)
         cmd, t, nonce, h = str(msg["c"]), int(msg["t"]), str(msg["n"]), str(msg["h"])
@@ -51,6 +53,8 @@ def unpack_command(secret, payload, seen, now=None):
         return None
     now = time.time() if now is None else now
     if abs(now - t / 1000) > COMMAND_MAX_AGE or nonce in seen:
+        return None
+    if not_before is not None and t / 1000 < not_before - 2:
         return None
     seen[nonce] = now
     for k in [k for k, v in seen.items() if now - v > 2 * COMMAND_MAX_AGE]:
@@ -75,7 +79,8 @@ def url_auth(url):
 class MqttLink:
     """Подключение к брокеру: публикует статус, принимает команды. Переподключается сам."""
 
-    def __init__(self, cfg, on_command, log, url=None, seen=None):
+    def __init__(self, cfg, on_command, log, url=None, seen=None, not_before=None):
+        self.not_before = not_before
         self.cfg = cfg
         self.on_command = on_command
         self.log = log
@@ -132,7 +137,7 @@ class MqttLink:
 
     def _on_message(self, client, userdata, msg):
         secret = self.cfg.get("remote_secret") or ""
-        cmd = unpack_command(secret, msg.payload, self._seen)   # _seen общий у всех брокеров
+        cmd = unpack_command(secret, msg.payload, self._seen, not_before=self.not_before)   # _seen общий у всех брокеров
         if cmd:
             self.on_command(cmd)
 
@@ -175,9 +180,10 @@ def split_urls(value):
 class MqttGroup:
     """Несколько брокеров сразу: статус уходит во все, команда принимается из любого (один раз)."""
 
-    def __init__(self, cfg, on_command, log):
-        seen = {}
-        self.links = [MqttLink(cfg, on_command, log, url, seen) for url in split_urls(cfg.get("mqtt_url"))]
+    def __init__(self, cfg, on_command, log, seen=None, not_before=None):
+        seen = {} if seen is None else seen
+        self.links = [MqttLink(cfg, on_command, log, url, seen, not_before)
+                      for url in split_urls(cfg.get("mqtt_url"))]
 
     @property
     def connected(self):

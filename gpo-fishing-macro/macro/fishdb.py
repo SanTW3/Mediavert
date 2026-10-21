@@ -63,9 +63,8 @@ _features = None
 
 # ---------- хранилище ----------
 def _app_dir():
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    from .config import data_dir      # там же, где настройки: %APPDATA%\\FishPilot
+    return data_dir()
 
 
 def set_store_dir(path):

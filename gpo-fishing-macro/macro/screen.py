@@ -27,11 +27,27 @@ def grab(area):
     return bgra[:, :, 2::-1].copy()
 
 
-def screenshot_png():
-    """Скриншот всех мониторов в PNG (для Telegram при тревоге)."""
+def game_screenshot(max_side=1600):
+    """Снимок для Telegram (тревога, кнопка «Скриншот»): только окно Roblox, уменьшенный, JPEG.
+    Раньше снимались все мониторы — в чат уходили Discord, почта и всё, что открыто рядом, а огромная
+    картинка с трёх мониторов не проходила по лимитам Telegram."""
+    import io
+
+    from PIL import Image
+
+    from . import winput
     sct = _sct()
-    shot = sct.grab(sct.monitors[0])
-    return mss.tools.to_png(shot.rgb, shot.size)
+    rect = winput.roblox_rect()
+    if rect and rect[2] > 100 and rect[3] > 100 and rect[0] > -10000:
+        region = {"left": int(rect[0]), "top": int(rect[1]), "width": int(rect[2]), "height": int(rect[3])}
+    else:
+        region = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+    shot = sct.grab(region)
+    img = Image.frombytes("RGB", shot.size, shot.rgb)
+    img.thumbnail((max_side, max_side))
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=85)
+    return buf.getvalue()
 
 
 def primary_monitor():

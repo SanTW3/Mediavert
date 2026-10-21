@@ -1,2 +1,2 @@
 """GPO Fishing Macro."""
-__version__ = "1.8.4"
+__version__ = "2.0.0"

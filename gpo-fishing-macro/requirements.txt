@@ -1,14 +1,15 @@
-mss>=9.0
-numpy>=1.24
-pillow>=10.0
-pynput>=1.7
+# Точные версии — сборка повторяема, а обновление зависимостей проходит через тесты
+mss==10.2.0
+numpy==2.5.4
+pillow==13.0.0
+pynput==1.8.2
 customtkinter==5.2.2
+paho-mqtt==2.1.0
 # Windows OCR для журнала улова (только на Windows)
-winrt-runtime>=2.0,<4; sys_platform == "win32"
-winrt-Windows.Foundation>=2.0,<4; sys_platform == "win32"
-winrt-Windows.Foundation.Collections>=2.0,<4; sys_platform == "win32"
-winrt-Windows.Globalization>=2.0,<4; sys_platform == "win32"
-winrt-Windows.Graphics.Imaging>=2.0,<4; sys_platform == "win32"
-winrt-Windows.Media.Ocr>=2.0,<4; sys_platform == "win32"
-winrt-Windows.Storage.Streams>=2.0,<4; sys_platform == "win32"
-paho-mqtt>=2.0,<3
+winrt-runtime==3.2.1; sys_platform == "win32"
+winrt-Windows.Foundation==3.2.1; sys_platform == "win32"
+winrt-Windows.Foundation.Collections==3.2.1; sys_platform == "win32"
+winrt-Windows.Globalization==3.2.1; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging==3.2.1; sys_platform == "win32"
+winrt-Windows.Media.Ocr==3.2.1; sys_platform == "win32"
+winrt-Windows.Storage.Streams==3.2.1; sys_platform == "win32"

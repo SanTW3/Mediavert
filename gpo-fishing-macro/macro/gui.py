@@ -8,8 +8,9 @@ import time
 import tkinter as tk
 
 import customtkinter as ctk
+import logging
 
-from . import __version__, alarm, config, fishdb, i18n, screen, updater, winput
+from . import __version__, alarm, applog, config, fishdb, i18n, screen, updater, winput
 from .blackout import Blackout
 from .catches import CatchLog
 from .engine import MacroEngine
@@ -27,6 +28,7 @@ except ImportError:  # без pynput горячие клавиши не рабо
 LLKHF_INJECTED = 0x10
 LLMHF_INJECTED = 0x01
 
+log = logging.getLogger("fishpilot")
 DIGITS = [str(d) for d in range(10)]
 DONATE_URL = "https://www.donationalerts.com/r/etnealy"
 
@@ -110,8 +112,20 @@ def resource(name):
 
 class App:
     def __init__(self):
+        applog.setup()
+        try:
+            moved = config.migrate_old_location()     # config.json и улов рядом с exe → %APPDATA%\\FishPilot
+        except OSError:
+            log.exception("Не удалось перенести настройки")
+            moved = False
         self.cfg = config.load()
         i18n.set_language(self.cfg.get("language"))
+        startup_notes = []
+        if moved:
+            startup_notes.append(tr("Настройки и улов перенесены в {path}", path=config.data_dir()))
+        if config.LAST_LOAD_ERROR:
+            startup_notes.append(tr("Файл настроек был повреждён ({err}) — копия сохранена как config.json.bad, "
+                                    "загружены настройки по умолчанию", err=config.LAST_LOAD_ERROR))
         self.events = queue.Queue()
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -142,6 +156,8 @@ class App:
         self._was_running = None
         self._check_rows = {}
         self._page = None
+        self._closing = False
+        self._entries = {}
 
         self.engine = MacroEngine(
             self.cfg,
@@ -177,6 +193,10 @@ class App:
                              self.log_threadsafe)
 
         self._build()
+        for note in startup_notes:
+            self.root.after(400, lambda n=note: self.log(n))
+        # Ошибки в обработчиках окна (кнопки, таймеры) — в журнал и лог-файл, а не в никуда
+        self.root.report_callback_exception = self._on_tk_error
         self._apply_topmost()
         self._start_hotkeys()
         self.root.protocol("WM_DELETE_WINDOW", self.exit)
@@ -194,14 +214,30 @@ class App:
         def changed(*_):
             try:
                 raw = v.get()
-                self.cfg[key] = raw if kind is bool else kind(raw)
-            except (ValueError, tk.TclError):
+            except tk.TclError:
                 return
+            if kind is bool:
+                value = raw
+            elif kind in (int, float):
+                value = config.parse_number(key, raw, kind)   # «0,5» тоже годится; NaN и мусор — нет
+            elif key == "black_spam_key":
+                value = raw.strip().lower() if raw.strip().lower() in winput.VK else None
+            else:
+                value = raw
+            self._mark_field(key, value is not None)
+            if value is None:
+                return                  # неверный ввод не сохраняем, поле подсвечено красным
+            self.cfg[key] = value
             self._schedule_save()
 
         v.trace_add("write", changed)
         self.vars[key] = v
         return v
+
+    def _mark_field(self, key, ok):
+        entry = self._entries.get(key)
+        if entry is not None and entry.winfo_exists():
+            entry.configure(border_color=CARD_BORDER if ok else RED)
 
     def _schedule_save(self):
         if self._save_job:
@@ -246,8 +282,10 @@ class App:
         self._label(body, row, text, hint)
         right = tk.Frame(body, bg=CARD)
         right.grid(row=row, column=1, sticky="e", pady=4)
-        ctk.CTkEntry(right, width=width, textvariable=self.var(key, kind), fg_color=FIELD,
-                     border_color=CARD_BORDER, justify="center").pack(side="left")
+        entry = ctk.CTkEntry(right, width=width, textvariable=self.var(key, kind), fg_color=FIELD,
+                             border_color=CARD_BORDER, justify="center")
+        entry.pack(side="left")
+        self._entries[key] = entry
         # Колонка единиц есть всегда — поля стоят ровно одно под другим
         tk.Label(right, text=unit or "", font=TK_LABEL, fg=MUTED, bg=CARD, width=4).pack(side="left", padx=(6, 0))
 
@@ -382,6 +420,11 @@ class App:
         i18n.set_language(code)
         self.cfg["language"] = i18n.current()
         self._save()
+        self.rebuild()
+
+    def rebuild(self):
+        """Перестроить окно на месте (смена языка, импорт настроек): журнал и раздел сохраняются."""
+        i18n.set_language(self.cfg.get("language"))
         if not self.engine.running:
             self._status_text = tr("Остановлен")   # во время ловли статус обновит сам движок
         log_text = self.log_box.get("1.0", "end-1c")
@@ -390,6 +433,7 @@ class App:
         self.content.destroy()
         self._check_rows = {}
         self._point_labels = {}
+        self._entries = {}
         self._build()
         self.log_box.configure(state="normal")
         self.log_box.insert("1.0", log_text)
@@ -559,7 +603,8 @@ class App:
                       (tr("Проверить Telegram"), self._check_tg, ACCENT, ACCENT_HOVER))
         self._switch(c, tr("Кнопки управления в боте"), "tg_control",
                      tr("Экран, скриншот, статус, улов, стоп. Меню — команда /menu"))
-        self._switch(c, tr("Скриншот к тревоге"), "alarm_screenshot")
+        self._switch(c, tr("Скриншот к тревоге"), "alarm_screenshot",
+                     hint=tr("Только окно Roblox, уходит на серверы Telegram вместе с тревогой"))
 
         c = self._card(page, tr("Мини-приложение"), tr("Живая панель в Telegram: статистика, старт/стоп, экран, улов"))
         self._switch(c, tr("Включить мини-приложение"), "remote_enabled",
@@ -765,6 +810,14 @@ class App:
         self._switch(c, tr("Гасить все мониторы"), "blackout_all_monitors", tr("Выкл — только монитор с Roblox"))
         self._num(c, tr("Гасить через"), "blackout_delay", tr("После «Старт»"), unit=tr("с"))
 
+        c = self._card(page, tr("Помощь"), tr("Если что-то не работает — пришлите диагностику автору"))
+        self._buttons(c, (tr("Скопировать диагностику"), self._copy_diagnostics, ACCENT, ACCENT_HOVER),
+                      (tr("Папка с логами"), self._open_logs, FIELD, CARD_BORDER))
+        self._buttons(c, (tr("Экспорт настроек"), self._export_settings, FIELD, CARD_BORDER),
+                      (tr("Импорт настроек"), self._import_settings, FIELD, CARD_BORDER))
+        tk.Label(c, text=tr("В экспорт не попадают токены и секреты — файлом можно делиться"), font=TK_HINT,
+                 fg=MUTED, bg=CARD).grid(row=self._row(c), column=0, columnspan=2, sticky="w")
+
         c = self._card(page, tr("Обновления"), tr("Сейчас версия {__version__}", __version__=__version__))
         self._switch(c, tr("Проверять при запуске"), "auto_update",
                      tr("Новая версия скачивается прямо в программу, настройки и улов остаются"))
@@ -834,7 +887,7 @@ class App:
 
         def job():
             try:
-                png = screen.screenshot_png() if self.cfg.get("alarm_screenshot") else None
+                png = screen.game_screenshot() if self.cfg.get("alarm_screenshot") else None
             except Exception:
                 png = None
             alarm.send_alarm(self.cfg, tr("Тестовая тревога — всё работает"), png,
@@ -876,7 +929,7 @@ class App:
                                     tr(". Впишите свой chat id вручную"))
                 return
             (cid, name), = chats.items()
-            self.root.after(0, lambda: self._set_chat_id(cid, name))
+            self.call_soon(lambda: self._set_chat_id(cid, name))
         threading.Thread(target=job, daemon=True).start()
 
     def _set_chat_id(self, cid, name):
@@ -1242,7 +1295,7 @@ class App:
         elif cmd == "shot":
             def job():
                 try:
-                    png = screen.screenshot_png()  # чёрное окно в захват не попадает — видна игра
+                    png = screen.game_screenshot()  # чёрное окно в захват не попадает — видна игра
                 except Exception as exc:
                     self.log_threadsafe(tr("Скриншот не удался: {exc}", exc=exc))
                     return
@@ -1252,6 +1305,7 @@ class App:
             self.tg.send(status_text(self.engine, self.blackout.active) + "\n" + self.remote.diagnostics())
 
     def log(self, text):
+        log.info(applog.redact(str(text), self.cfg))
         self.log_box.configure(state="normal")
         self.log_box.insert("end", time.strftime("[%H:%M:%S] ") + text + "\n")
         self.log_box.see("end")
@@ -1259,6 +1313,56 @@ class App:
         if lines > 500:
             self.log_box.delete("1.0", f"{lines - 500}.0")
         self.log_box.configure(state="disabled")
+
+    # ---------- помощь ----------
+    def _copy_diagnostics(self):
+        text = applog.diagnostics(self.cfg)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.log(tr("Диагностика скопирована — вставьте её в сообщение автору (токенов и секретов в ней нет)"))
+
+    def _open_logs(self):
+        path = applog.log_dir()
+        if sys.platform == "win32":
+            os.startfile(path)
+        else:
+            self.log(path)
+
+    def _export_settings(self):
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(parent=self.root, defaultextension=".json",
+                                            initialfile="fishpilot-settings.json",
+                                            filetypes=[("JSON", "*.json")])
+        if not path:
+            return
+        try:
+            config.export_settings(self.cfg, path)
+            self.log(tr("Настройки сохранены в {path} (без токенов и секретов)", path=path))
+        except OSError as exc:
+            self.log(tr("Не удалось сохранить настройки: {exc}", exc=exc))
+
+    def _import_settings(self):
+        from tkinter import filedialog
+        if self.engine.running:
+            self.log(tr("Сначала остановите ловлю"))
+            return
+        path = filedialog.askopenfilename(parent=self.root, filetypes=[("JSON", "*.json")])
+        if not path:
+            return
+        try:
+            n = config.import_settings(self.cfg, path)
+        except Exception as exc:
+            self.log(tr("Не удалось загрузить настройки: {exc}", exc=exc))
+            return
+        self._save()
+        # Поля окна берут значения из переменных — обновляем их и перестраиваем окно
+        for key, var in list(self.vars.items()):
+            try:
+                var.set(self.cfg[key])
+            except (tk.TclError, KeyError):
+                pass
+        self.rebuild()
+        self.log(tr("Загружено настроек: {n}. Токены и секреты остались ваши", n=n))
 
     # ---------- обновление ----------
     def _startup_update(self):
@@ -1284,12 +1388,12 @@ class App:
 
         def job():
             try:
-                upd = updater.check(self.cfg.get("update_repo") or updater.DEFAULT_REPO)
+                upd = updater.check(updater.DEFAULT_REPO)   # адрес обновлений не берём из настроек
             except Exception as exc:
                 if not silent:
                     self.log_threadsafe(tr("Не удалось проверить обновления: {exc}", exc=exc))
                 return
-            self.root.after(0, lambda: self._on_update_found(upd, silent))
+            self.call_soon(lambda: self._on_update_found(upd, silent))
         threading.Thread(target=job, daemon=True).start()
 
     def _on_update_found(self, upd, silent):
@@ -1334,12 +1438,12 @@ class App:
 
         def job():
             try:
-                new = updater.download(upd, sys.executable + ".new", progress)
+                new = updater.download(upd, os.path.join(self._update_dir(), updater.ZIP_ASSET), progress)
             except Exception as exc:
                 self.log_threadsafe(tr("Обновление не скачалось: {exc}", exc=exc))
-                self.root.after(0, self._update_failed)
+                self.call_soon(self._update_failed)
                 return
-            self.root.after(0, lambda: self._install_update(new, upd))
+            self.call_soon(lambda: self._install_update(new, upd))
         threading.Thread(target=job, daemon=True).start()
 
     def _update_failed(self):
@@ -1347,28 +1451,46 @@ class App:
         if self._update:
             self.update_btn.configure(text=tr("⬆ Обновить до {version}", version=self._update.version), state="normal")
 
+    def _update_dir(self):
+        return os.path.join(config.data_dir(), "update")
+
     def _install_update(self, new, upd):
         self._save()
         try:
-            updater.install(new)
+            app_dir = updater.install(new, self._update_dir())
         except Exception as exc:
+            log.exception("update install failed")
             self.log(tr("Не удалось установить обновление: {exc}", exc=exc))
             self._update_failed()
             return
+        if updater.onefile():
+            # Один exe стал папкой: дальше запускать FishPilot.exe из неё
+            self.log(tr("FishPilot теперь живёт в папке {path} — запускайте FishPilot.exe оттуда, "
+                        "старый exe можно удалить", path=app_dir))
         self.log(tr("Перезапуск в версии {version}…", version=upd.version))
         self.root.after(300, self.exit)
 
     def exit(self):
-        self.engine.stop()
-        self._blackout_off()
-        self.tg.stop()
-        self.remote.stop()
-        self._save()
+        if self._closing:
+            return
+        self._closing = True
+        # Сначала ловля: дождаться, пока поток отпустит ЛКМ, и на всякий случай отпустить её самим
+        self._safe(self.engine.stop)
+        self._safe(self.engine.join, 1.5)
+        self._safe(winput.mouse_up)
+        self._safe(self._blackout_off)
+        self._safe(self.hud.hide)
+        self._safe(self.tg.stop)
+        self._safe(self.remote.stop)
+        self._safe(self._save)
         if getattr(self, "listener", None):
-            self.listener.stop()
+            self._safe(self.listener.stop)
         if getattr(self, "mouse_listener", None):
-            self.mouse_listener.stop()
-        self.root.destroy()
+            self._safe(self.mouse_listener.stop)
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     # ---------- горячие клавиши и события из потоков ----------
     def _start_hotkeys(self):
@@ -1399,6 +1521,12 @@ class App:
             return
         if self._rebinding:
             key, self._rebinding = self._rebinding, None
+            taken = [k for k in self.hotkey_labels if k != key and self.cfg.get(k) == name]
+            if name in ("esc", "enter") or taken:
+                # Esc/Enter нужны рамке выбора области, а одна клавиша на два действия срабатывает не так
+                self.hotkey_labels[key].configure(text=self.cfg[key].upper(), text_color=ACCENT)
+                self.log(tr("Клавишу {name} нельзя: она уже занята или нужна программе", name=name.upper()))
+                return
             self.cfg[key] = name
             self.hotkey_labels[key].configure(text=name.upper(), text_color=ACCENT)
             self._refresh_hotkey_hint()
@@ -1437,39 +1565,72 @@ class App:
         elif name == self.cfg["hotkey_exit"]:
             self.exit()
 
-    def _poll(self):
+    def _on_tk_error(self, exc_type, exc, tb):
+        log.error("Ошибка в окне", exc_info=(exc_type, exc, tb))
         try:
-            while True:
-                kind, payload = self.events.get_nowait()
-                if kind == "key":
-                    self._on_key(payload)
-                    if not self.root.winfo_exists():
-                        return
-                elif kind == "log":
-                    self.log(payload)
-                elif kind == "status":
-                    text, color = payload
-                    self._status_text = text
-                    self._status_color = color
-                    self.remote.poke()
-                    self.status.configure(text=f"●  {text}", fg_color=STATUS_COLORS.get(color, color))
-                elif kind == "stats":
-                    self._stats = payload
-                    self.remote.poke()
-                elif kind == "click":
-                    if self.blackout.active:
-                        self._blackout_off(notify=True)
-                elif kind == "catalog":
-                    self._fill_catalog()
-                elif kind == "tg":
-                    self._on_tg(payload)
-        except queue.Empty:
+            self.log(tr("Ошибка: {exc}. Подробности — в «Программа → Помощь → Скопировать диагностику»", exc=exc))
+        except Exception:
             pass
+
+    def call_soon(self, fn):
+        """Выполнить fn в главном потоке окна. Из фоновых потоков нельзя трогать Tk (и root.after)."""
+        self.events.put(("call", fn))
+
+    def _handle_event(self, kind, payload):
+        if kind == "key":
+            self._on_key(payload)
+        elif kind == "log":
+            self.log(payload)
+        elif kind == "status":
+            text, color = payload
+            self._status_text = text
+            self._status_color = color
+            self.remote.poke()
+            self.status.configure(text=f"●  {text}", fg_color=STATUS_COLORS.get(color, color))
+        elif kind == "stats":
+            self._stats = payload
+            self.remote.poke()
+        elif kind == "click":
+            if self.blackout.active:
+                self._blackout_off(notify=True)
+        elif kind == "catalog":
+            self._fill_catalog()
+        elif kind == "tg":
+            self._on_tg(payload)
+        elif kind == "call":
+            payload()
+
+    def _poll(self):
+        """Очередь событий из потоков. Ошибка в одном событии не должна останавливать цикл: раньше после
+        неё переставали работать горячие клавиши, журнал и выход из чёрного экрана."""
+        if self._closing:
+            return
+        for _ in range(200):
+            try:
+                kind, payload = self.events.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                self._handle_event(kind, payload)
+            except Exception:
+                log.exception("Ошибка при обработке события %s", kind)
+                if self.blackout.active and kind in ("key", "click"):
+                    self._safe(self._blackout_off)        # из чёрного экрана выйти можно всегда
+            if self._closing:
+                return
+        self._safe(self._refresh_running)
+        self._safe(self._refresh_stats)
+        try:
+            self.root.after(100, self._poll)
         except tk.TclError:
-            return  # окно уже закрыто
-        self._refresh_running()
-        self._refresh_stats()
-        self.root.after(100, self._poll)
+            pass  # окно уже закрыто
+
+    def _safe(self, fn, *args):
+        try:
+            return fn(*args)
+        except Exception:
+            log.exception("Ошибка в %s", getattr(fn, "__name__", fn))
+            return None
 
     def _refresh_running(self):
         running = self.engine.running

@@ -9,11 +9,14 @@
 Кто знает секрет, тот видит статус и управляет макросом, поэтому он длинный и случайный
 и передаётся только в ссылке на мини-приложение в вашем личном чате с ботом.
 """
+import hashlib
 import json
 import threading
 import time
 import urllib.parse
 import urllib.request
+
+from .mqttlink import pack_status, unpack_command
 from .i18n import tr
 
 COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches", "reset_catches"}
@@ -31,7 +34,9 @@ MQTT_EVERY = 30.0        # и раз в 30 с — «я жив»
 
 
 def topics(secret):
-    return f"gpo-{secret}-status", f"gpo-{secret}-cmd"
+    """Темы ntfy — хэш секрета: сам секрет по сети и в журналы сервера ntfy не попадает."""
+    h = hashlib.sha256(("gpo-ntfy:" + secret).encode()).hexdigest()[:32]
+    return f"gpo-{h}-s", f"gpo-{h}-c"
 
 
 def webapp_link(cfg):
@@ -65,10 +70,9 @@ class Remote:
         self._mq_last = None
         self._mq_time = -MQTT_EVERY
         self._mq_force = False
-        self.mqtt = None
-        if cfg.get("mqtt_url"):
-            from .mqttlink import MqttGroup
-            self.mqtt = MqttGroup(cfg, self._mqtt_command, log)
+        self._seen = {}           # одноразовые номера команд — одна команда не выполнится дважды
+        self._started = time.time()
+        self.mqtt = None          # подключаемся к брокерам, только когда панель включена (см. _sync_mqtt)
         threading.Thread(target=self._publish_loop, daemon=True).start()
         threading.Thread(target=self._command_loop, daemon=True).start()
 
@@ -77,6 +81,18 @@ class Remote:
         self._kick.set()
         if self.mqtt:
             self.mqtt.stop()
+
+    def _sync_mqtt(self):
+        """Брокеры — только когда панель нужна: без настроенного Telegram открыть её всё равно нечем,
+        и тогда программа вообще не ходит на публичные серверы."""
+        want = self._enabled() and bool(self.cfg.get("mqtt_url"))
+        if want and self.mqtt is None:
+            from .mqttlink import MqttGroup
+            self.mqtt = MqttGroup(self.cfg, self._mqtt_command, self.log, seen=self._seen,
+                                  not_before=self._started)
+        elif not want and self.mqtt is not None:
+            self.mqtt.stop()
+            self.mqtt = None
 
     def _mqtt_command(self, cmd):
         if cmd in ("_connected", "ping"):
@@ -95,7 +111,8 @@ class Remote:
         return str(self.cfg.get("ntfy_server") or "https://ntfy.sh").rstrip("/")
 
     def _enabled(self):
-        return bool(self.cfg.get("remote_enabled") and self.cfg.get("remote_secret"))
+        telegram = str(self.cfg.get("telegram_token") or "").strip() and str(self.cfg.get("telegram_chat_id") or "").strip()
+        return bool(self.cfg.get("remote_enabled") and self.cfg.get("remote_secret") and telegram)
 
     def diagnostics(self):
         """Строка для статуса в Telegram: дошёл ли статус до панели."""
@@ -116,6 +133,7 @@ class Remote:
         while not self._stop.is_set():
             self._kick.wait(2.0)
             self._kick.clear()
+            self._sync_mqtt()
             if not self._enabled():
                 continue
             try:
@@ -155,10 +173,11 @@ class Remote:
                 continue
             self._ping = False
             body = dict(status, ts=int(time.time()))
-            topic = topics(self.cfg["remote_secret"])[0]
+            secret = self.cfg["remote_secret"]
+            topic = topics(secret)[0]
             try:
                 req = urllib.request.Request(
-                    f"{self._server()}/{topic}", data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                    f"{self._server()}/{topic}", data=pack_status(secret, body),
                     headers={"Cache": "yes"}, method="POST")
                 urllib.request.urlopen(req, timeout=15).read()
                 self._last_sent = key
@@ -202,9 +221,11 @@ class Remote:
             return
         if msg.get("event") != "message":
             return
-        if time.time() - float(msg.get("time", 0)) > COMMAND_MAX_AGE:
+        # Команда подписана секретом (как в MQTT): чужую не примем, перехваченную не повторим
+        cmd = unpack_command(self.cfg.get("remote_secret") or "", str(msg.get("message", "")), self._seen,
+                             not_before=self._started)
+        if not cmd:
             return
-        cmd = str(msg.get("message", "")).strip()
         if cmd == "ping":
             # Панель открыта: прислать ей свежий статус и держать его свежим, пока она пингует
             self._watch_until = time.monotonic() + WATCH_FOR

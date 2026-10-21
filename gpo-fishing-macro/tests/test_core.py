@@ -458,6 +458,13 @@ def learned_store(tmp_path):
     fishdb.set_store_dir(None)
 
 
+@pytest.fixture(autouse=True)
+def roblox_in_front(monkeypatch):
+    """В тестах «игра» всегда на переднем плане: иначе на Windows (CI) движок ждал бы окно Roblox вечно."""
+    from macro import winput
+    monkeypatch.setattr(winput, "foreground_title", lambda: "Roblox")
+
+
 def _shot(fid, bg=(20, 30, 70), scale=1.0, text=None):
     from macro import fishdb
     ic = fishdb.icon(fid)

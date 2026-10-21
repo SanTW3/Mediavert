@@ -156,12 +156,15 @@ def clean_env(env=None):
 def install_script(new_dir, app_dir, pid):
     """Текст .cmd: дождаться выхода программы (pid), скопировать новые файлы, запустить, удалить себя."""
     exe = os.path.join(app_dir, EXE_NAME)
+    # Полные пути: если в PATH есть Git (usr\bin), «find» и «timeout» оказались бы его утилитами
+    sys32 = r"%SystemRoot%\System32"
     return "\r\n".join([
         "@echo off",
-        "chcp 65001 >nul",
+        f"{sys32}\\chcp.com 65001 >nul",
         ":wait",
-        f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)',
-        f'robocopy "{new_dir}" "{app_dir}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >nul',
+        f'{sys32}\\tasklist.exe /FI "PID eq {pid}" 2>nul | {sys32}\\find.exe "{pid}" >nul'
+        f' && ({sys32}\\ping.exe -n 2 127.0.0.1 >nul & goto wait)',
+        f'{sys32}\\robocopy.exe "{new_dir}" "{app_dir}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >nul',
         "if errorlevel 8 goto end",
         f'start "" "{exe}" --wait-instance',
         ":end",

@@ -1,7 +1,7 @@
 name: GPO Fishing Macro exe
 
 # Сборка и тесты — на каждый push (без права записи в репозиторий).
-# Обновление пользователям уходит ТОЛЬКО по тегу fishpilot-vX.Y.Z — отдельной задачей publish,
+# Обновление пользователям уходит ТОЛЬКО по тегу fishpilot-vX.Y.Z или ручному запуску с publish — задачей publish,
 # у которой одной есть право писать релизы. Случайный или недоделанный push до людей не дойдёт.
 on:
   push:
@@ -13,7 +13,12 @@ on:
       - ".github/workflows/gpo-fishing-macro.yml"
     tags:              # для тегов фильтр paths не применяется
       - "fishpilot-v*"
-  workflow_dispatch:
+  workflow_dispatch:     # или вручную: Actions → «Run workflow» с галочкой publish
+    inputs:
+      publish:
+        description: "Опубликовать обновление для пользователей"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -85,12 +90,13 @@ jobs:
   # Предварительный и не «latest», чтобы не мешать релизам Mediavert и его автообновлению.
   publish:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/fishpilot-v')
+    if: startsWith(github.ref, 'refs/tags/fishpilot-v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Tag matches version
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           test "${GITHUB_REF_NAME}" = "fishpilot-v${{ needs.build.outputs.version }}" || {
             echo "Тег ${GITHUB_REF_NAME} не совпадает с версией ${{ needs.build.outputs.version }}"; exit 1; }

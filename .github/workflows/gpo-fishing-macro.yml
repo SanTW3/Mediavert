@@ -5,10 +5,13 @@ name: GPO Fishing Macro exe
 # у которой одной есть право писать релизы. Случайный или недоделанный push до людей не дойдёт.
 on:
   push:
+    # Если указать только tags, GitHub перестаёт запускать сборку на push в ветки — поэтому branches тоже
+    branches:
+      - "**"
     paths:
       - "gpo-fishing-macro/**"
       - ".github/workflows/gpo-fishing-macro.yml"
-    tags:
+    tags:              # для тегов фильтр paths не применяется
       - "fishpilot-v*"
   workflow_dispatch:
 

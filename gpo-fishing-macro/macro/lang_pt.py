@@ -461,6 +461,6 @@ T = {
     "видов": "espécies",
     "Новая секретная ссылка создана — старая панель больше не работает. Нажмите «Отправить панель»": "Novo link secreto criado — o painel antigo não funciona mais. Clique em «Enviar painel»",
     "Кнопки управления выключены («Кнопки управления в боте») — тревоги придут, но бот не будет отвечать на кнопки": "Botões de controle desativados («Botões de controle no bot») — os alarmes vão chegar, mas o bot não vai responder aos botões",
-    "❤  Поддержать автора": "❤  Apoiar o autor",
-    "Спасибо за поддержку! ❤ Страница пожертвований открыта в браузере": "Obrigado pelo apoio! ❤ A página de doações foi aberta no navegador",
+    "♥  Поддержать автора": "♥  Apoiar o autor",
+    "Спасибо за поддержку! ♥ Страница пожертвований открыта в браузере": "Obrigado pelo apoio! ♥ A página de doações foi aberta no navegador",
 }

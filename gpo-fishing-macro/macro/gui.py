@@ -350,7 +350,7 @@ class App:
         self.update_btn = ctk.CTkButton(bottom, text="", height=30, corner_radius=6, fg_color=GREEN,
                                         hover_color=GREEN_HOVER, font=(FONT, 11, "bold"), command=self._do_update)
         self._update_btn_box = bottom
-        self._donate_btn = ctk.CTkButton(bottom, text=tr("❤  Поддержать автора"), height=30, corner_radius=6,
+        self._donate_btn = ctk.CTkButton(bottom, text=tr("♥  Поддержать автора"), height=30, corner_radius=6,
                                          fg_color="#7a2948", hover_color="#9c3459", font=(FONT, 11, "bold"),
                                          command=self._donate)
         self._donate_btn.pack(fill="x", pady=(0, 6))
@@ -409,7 +409,7 @@ class App:
         """Страница пожертвований автору — в обычном браузере."""
         import webbrowser
         webbrowser.open(DONATE_URL)
-        self.log(tr("Спасибо за поддержку! ❤ Страница пожертвований открыта в браузере"))
+        self.log(tr("Спасибо за поддержку! ♥ Страница пожертвований открыта в браузере"))
 
     def show_page(self, key):
         for k, frame in self.pages.items():

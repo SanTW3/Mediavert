@@ -111,7 +111,19 @@ def install(new_exe, exe=None, launch=True):
         raise
     if launch:
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        subprocess.Popen([exe], cwd=os.path.dirname(exe), close_fds=True, creationflags=flags)
+        subprocess.Popen([exe], cwd=os.path.dirname(exe), close_fds=True, creationflags=flags, env=clean_env())
+
+
+def clean_env(env=None):
+    """Окружение для запуска нового exe. Без этого новый exe (PyInstaller onefile) решает, что он —
+    дочерний процесс старого, и работает из его временной папки _MEI…; старый при выходе пытается её
+    удалить и пишет «Failed to remove temporary directory»."""
+    env = dict(os.environ if env is None else env)
+    for key in list(env):
+        if key.startswith("_PYI") or key.startswith("_MEIPASS"):
+            del env[key]
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
 
 
 def cleanup(exe=None):

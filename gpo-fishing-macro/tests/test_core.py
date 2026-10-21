@@ -1057,3 +1057,11 @@ def test_language_switch(monkeypatch):
     assert cfg["language"] == "en"                      # новая установка — английский
     config.migrate(cfg, 5)
     assert cfg["language"] == "ru"                      # кто уже пользовался — остаётся русский
+
+
+def test_restarted_exe_gets_clean_pyinstaller_env():
+    """Новый exe после обновления не должен считать себя дочерним процессом старого (папка _MEI…)."""
+    from macro import updater
+    env = updater.clean_env({"PATH": "x", "_MEIPASS2": "C:/tmp/_MEI1", "_PYI_APPLICATION_HOME_DIR": "C:/tmp/_MEI1",
+                             "_PYI_PARENT_PROCESS_LEVEL": "1"})
+    assert env == {"PATH": "x", "PYINSTALLER_RESET_ENVIRONMENT": "1"}

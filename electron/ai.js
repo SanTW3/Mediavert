@@ -1,4 +1,5 @@
-// Обработка с нейросетями: распознавание речи (whisper.cpp) и улучшение/увеличение фото (Real-ESRGAN).
+// Обработка с нейросетями: распознавание речи (whisper.cpp), улучшение/увеличение фото (Real-ESRGAN)
+// и дорисовка краёв (LaMa, electron/outpaint.js).
 // Остальные задачи — обычная конвертация через ffmpeg.
 const fs = require('fs');
 const os = require('os');
@@ -7,6 +8,7 @@ const crypto = require('crypto');
 const tools = require('./tools');
 const { kindOf } = require('../lib/formats');
 const { convert, probe } = require('../lib/convert');
+const { outpaint } = require('./outpaint');
 
 const LANGS = ['auto', 'ru', 'en', 'uk', 'de', 'es', 'fr', 'it', 'pt', 'pl', 'tr', 'ja', 'zh', 'ko'];
 const MAX_AI_PIXELS = 2_500_000; // большие фото перед ИИ уменьшаем: нейросеть всё равно увеличит в 4 раза
@@ -15,8 +17,11 @@ const MAX_AI_PIXELS = 2_500_000; // большие фото перед ИИ ум
 function neededTools(format, o = {}) {
   const kind = kindOf(format);
   if (kind === 'text') return ['whisper', o.speechModel === 'small' ? 'whisper-small' : 'whisper-base'];
-  if (kind === 'image' && o.enhance === 'ai') return ['esrgan'];
-  return [];
+  if (kind !== 'image') return [];
+  const names = [];
+  if (o.outpaint) names.push('lama');
+  if (o.enhance === 'ai' || o.outpaint) names.push('esrgan');
+  return names;
 }
 
 async function ensure(names, allowDownload, onStage) {
@@ -110,10 +115,35 @@ async function enhanceImage({ input, output, format, options: o, onProgress, onS
   }
 }
 
+// Сначала дорисовываем края, потом обычная обработка фото уже с расширенного холста
+async function outpaintImage(args) {
+  const { input, options: o, onProgress, onStage, onSpawn } = args;
+  await ensure(neededTools(args.format, o), o.allowDownload, onStage);
+  const work = workDir('lama');
+  try {
+    onStage('Готовлю фото…');
+    const src = path.join(work, 'src.png');
+    await convert({ input, output: src, format: 'png', options: { start: o.start }, onSpawn });
+    const info = await probe(src);
+    if (!info.width) throw new Error('Не удалось прочитать изображение');
+    const wide = path.join(work, 'wide.png');
+    const grown = await outpaint({ src, out: wide, w: info.width, h: info.height, mode: o.outpaint, work, onProgress: (p) => onProgress(p * 0.8), onStage, onSpawn });
+    const next = { ...args, input: grown ? wide : src, options: { ...o, outpaint: '', start: '', end: '' } };
+    if (o.enhance === 'ai') {
+      return await enhanceImage({ ...next, onProgress: (p) => onProgress(0.8 + p * 0.2) });
+    }
+    onStage('Сохраняю…');
+    return await convert(next);
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+
 // Единая точка запуска задачи
 function runJob(args) {
   const kind = kindOf(args.format);
   if (kind === 'text') return transcribe(args);
+  if (kind === 'image' && args.options.outpaint) return outpaintImage(args);
   if (kind === 'image' && args.options.enhance === 'ai') return enhanceImage(args);
   return convert(args);
 }

@@ -1,5 +1,5 @@
 // Дополнительные компоненты, которые скачиваются один раз по запросу:
-// распознавание речи (whisper.cpp + модель) и ИИ-увеличение фото (Real-ESRGAN).
+// распознавание речи (whisper.cpp + модель), ИИ-увеличение фото (Real-ESRGAN) и дорисовка краёв (LaMa).
 // Источники — официальные релизы; каждый файл проверяется по SHA-256.
 const fs = require('fs');
 const path = require('path');
@@ -41,6 +41,14 @@ const TOOLS = {
     size: 45_474_481,
     zip: true,
     entry: 'realesrgan-ncnn-vulkan.exe',
+  },
+  lama: {
+    title: 'нейросеть дорисовки фото',
+    what: 'нейросеть дорисовки фото',
+    url: 'https://huggingface.co/Carve/LaMa-ONNX/resolve/c3c0c9e468934d62e79c329e35d82dd09ff8c444/lama_fp32.onnx',
+    sha256: '1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6',
+    size: 208_044_816,
+    entry: 'lama_fp32.onnx',
   },
 };
 

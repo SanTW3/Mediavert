@@ -8,7 +8,7 @@ function defaults() {
       sampleRate: '', bitDepth: '24', channels: '', bitrate: '320',
       normalize: false, lufs: '-14', removeSilence: false, fadeIn: '', fadeOut: '',
       height: '', fps: '', quality: 'medium', mute: false,
-      width: '', imageQuality: '90', enhance: '', upscale: '',
+      width: '', imageQuality: '90', enhance: '', upscale: '', outpaint: '',
       targetSize: '',
       speechModel: 'base', speechLang: 'auto',
     },

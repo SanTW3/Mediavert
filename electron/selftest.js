@@ -459,6 +459,43 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     }
     log('panels captured');
   }
+
+  // дорисовка краёв: модель подкладываем из проверенной копии
+  async function outpaintTest() {
+    const { probe } = require('../lib/convert');
+    const A = path.join(dir, 'op-samples');
+    settings.set({ outputMode: 'beside' });
+    const md = path.join(app.getPath('userData'), 'tools', 'lama');
+    if (!fs.existsSync(path.join(md, '.ok'))) {
+      fs.mkdirSync(md, { recursive: true });
+      fs.copyFileSync(path.join(dir, 'lama', 'dl', 'lama_fp32.onnx'), path.join(md, 'lama_fp32.onnx'));
+      fs.writeFileSync(path.join(md, '.ok'), 'seed');
+    }
+    const base = settings.get().options;
+    const runOne = async (label, file, format, extra) => {
+      const [id] = startConvert([file], format, { ...base, enhance: '', upscale: '', width: '', allowDownload: true, ...extra }, 'main');
+      const t0 = Date.now();
+      const stages = new Set();
+      for (;;) {
+        const j = jobs.list().find((x) => x.id === id);
+        if (j.stage) stages.add(j.stage.replace(/d+%/, '…'));
+        if (j.status === 'done' || j.status === 'error') {
+          let size = '';
+          if (j.status === 'done') { const i = await probe(j.output); size = i.width + 'x' + i.height; fs.copyFileSync(j.output, path.join(out, 'op-' + label.split(' ')[0] + path.extname(j.output))); }
+          log(label, j.status, j.error || '', size, ((Date.now() - t0) / 1000).toFixed(1) + 's', '| этапы:', [...stages].join(' / '));
+          return j;
+        }
+        await wait(200);
+      }
+    };
+    const small = path.join(A, 'фото с кириллицей', 'пейзаж.jpg');
+    await runOne('1 16:9', small, 'jpg', { outpaint: '16:9' });
+    await runOne('2 9:16', small, 'png', { outpaint: '9:16' });
+    await runOne('3 шире', small, 'jpg', { outpaint: 'more' });
+    await runOne('4 большое-1:1', path.join(A, 'большое.jpg'), 'jpg', { outpaint: '1:1' });
+    await runOne('5 16:9+ИИ×2', small, 'png', { outpaint: '16:9', enhance: 'ai', upscale: '2' });
+    await runOne('6 без-разрешения', small, 'jpg', { outpaint: '4:5', allowDownload: false });
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -530,7 +567,8 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_PANELS) await panelShots(main);
+      if (process.env.MEDIAVERT_OUTPAINT) await outpaintTest();
+      else if (process.env.MEDIAVERT_PANELS) await panelShots(main);
       else if (process.env.MEDIAVERT_AI) await aiTest();
       else if (process.env.MEDIAVERT_STUCK) await stuckTest(main);
       else if (process.env.MEDIAVERT_LIQUID) await liquidTest(main);

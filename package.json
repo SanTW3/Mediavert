@@ -1,7 +1,7 @@
 {
   "name": "mediavert",
   "productName": "Mediavert",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Конвертер аудио, видео и изображений",
   "author": "Mediavert",
   "main": "electron/main.js",
@@ -15,7 +15,8 @@
   "dependencies": {
     "electron-updater": "^6.8.9",
     "ffmpeg-static": "^5.2.0",
-    "koffi": "^3.3.2"
+    "koffi": "^3.3.2",
+    "onnxruntime-web": "^1.22.0"
   },
   "devDependencies": {
     "electron": "^44.7.0",
@@ -31,6 +32,8 @@
     "files": [
       "electron/**/*",
       "!electron/selftest.js",
+      "!node_modules/onnxruntime-web/lib/**",
+      "!node_modules/onnxruntime-web/dist/!(ort.node.min.mjs|ort-wasm-simd-threaded.mjs|ort-wasm-simd-threaded.wasm)",
       "renderer/**/*",
       "lib/**/*",
       "assets/**/*",
@@ -38,7 +41,10 @@
     ],
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",
-      "node_modules/@koromix/**/*"
+      "node_modules/@koromix/**/*",
+      "node_modules/onnxruntime-web/**/*",
+      "node_modules/onnxruntime-common/**/*",
+      "electron/lama-worker.js"
     ],
     "win": {
       "target": [

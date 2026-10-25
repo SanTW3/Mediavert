@@ -210,6 +210,17 @@
               <option value="4">В 4 раза</option>
             </select>
           </label>
+          <label class="row"><span>Дорисовать края<small>ИИ продолжит фон · ≈210 МБ, один раз</small></span>
+            <select name="outpaint">
+              <option value="">Нет</option>
+              <option value="16:9">Широкое 16:9</option>
+              <option value="9:16">Вертикальное 9:16</option>
+              <option value="4:5">Для ленты 4:5</option>
+              <option value="1:1">Квадрат 1:1</option>
+              <option value="4:3">Классика 4:3</option>
+              <option value="more">Шире со всех сторон</option>
+            </select>
+          </label>
           <label class="row"><span>Ширина<small>Точный размер — важнее «Увеличить»</small></span><span class="unit"><input type="number" name="width" min="8" max="16384" placeholder="авто">px</span></label>
           <label class="row column"><span>Качество JPG и WebP <b id="qVal">90</b></span><input type="range" name="imageQuality" min="1" max="100" value="90"></label>
         </div>

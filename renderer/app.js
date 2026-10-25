@@ -696,7 +696,7 @@ function refresh() {
 
 /* ---------- конвертация ---------- */
 
-const fmtMb = (b) => `${Math.round(b / 1048576)} МБ`;
+const fmtMb = (b) => (b >= 1e9 ? `${(b / 1073741824).toFixed(1).replace('.', ',')} ГБ` : `${Math.round(b / 1048576)} МБ`);
 
 // Задачам с нейросетями нужны компоненты, которые скачиваются один раз — спрашиваем согласие
 async function confirmDownloads(items, options) {

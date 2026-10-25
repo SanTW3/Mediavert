@@ -8,7 +8,9 @@ const crypto = require('crypto');
 const tools = require('./tools');
 const { kindOf } = require('../lib/formats');
 const { convert, probe } = require('../lib/convert');
-const { outpaint } = require('./outpaint');
+const { outpaint, engineTools } = require('./outpaint');
+
+const engineOf = (o) => (o.outpaintModel === 'quality' ? 'sd' : 'lama');
 
 const LANGS = ['auto', 'ru', 'en', 'uk', 'de', 'es', 'fr', 'it', 'pt', 'pl', 'tr', 'ja', 'zh', 'ko'];
 const MAX_AI_PIXELS = 2_500_000; // большие фото перед ИИ уменьшаем: нейросеть всё равно увеличит в 4 раза
@@ -19,8 +21,8 @@ function neededTools(format, o = {}) {
   if (kind === 'text') return ['whisper', o.speechModel === 'small' ? 'whisper-small' : 'whisper-base'];
   if (kind !== 'image') return [];
   const names = [];
-  if (o.outpaint) names.push('lama');
-  if (o.enhance === 'ai' || o.outpaint) names.push('esrgan');
+  if (o.outpaint) names.push(...engineTools(engineOf(o)));
+  if (o.enhance === 'ai' && !names.includes('esrgan')) names.push('esrgan');
   return names;
 }
 
@@ -127,7 +129,7 @@ async function outpaintImage(args) {
     const info = await probe(src);
     if (!info.width) throw new Error('Не удалось прочитать изображение');
     const wide = path.join(work, 'wide.png');
-    const grown = await outpaint({ src, out: wide, w: info.width, h: info.height, mode: o.outpaint, work, onProgress: (p) => onProgress(p * 0.8), onStage, onSpawn });
+    const grown = await outpaint({ src, out: wide, w: info.width, h: info.height, mode: o.outpaint, engine: engineOf(o), prompt: o.outpaintPrompt, work, onProgress: (p) => onProgress(p * 0.8), onStage, onSpawn });
     const next = { ...args, input: grown ? wide : src, options: { ...o, outpaint: '', start: '', end: '' } };
     if (o.enhance === 'ai') {
       return await enhanceImage({ ...next, onProgress: (p) => onProgress(0.8 + p * 0.2) });

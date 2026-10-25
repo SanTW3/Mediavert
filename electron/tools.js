@@ -1,5 +1,6 @@
 // Дополнительные компоненты, которые скачиваются один раз по запросу:
-// распознавание речи (whisper.cpp + модель), ИИ-увеличение фото (Real-ESRGAN) и дорисовка краёв (LaMa).
+// распознавание речи (whisper.cpp + модель), ИИ-увеличение фото (Real-ESRGAN) и дорисовка краёв
+// (LaMa — быстро; stable-diffusion.cpp + SDXL Inpainting — качественно).
 // Источники — официальные релизы; каждый файл проверяется по SHA-256.
 const fs = require('fs');
 const path = require('path');
@@ -49,6 +50,23 @@ const TOOLS = {
     sha256: '1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6',
     size: 208_044_816,
     entry: 'lama_fp32.onnx',
+  },
+  sdcpp: {
+    title: 'программа генерации изображений',
+    what: 'программу генерации изображений',
+    url: 'https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1015-e41fbcf/sd-master-e41fbcf-bin-win-vulkan-x64.zip',
+    sha256: '259ceeb62f1069190d24c85ea1c4549d2d61deb0ef712510dbe98d79ce93a38b',
+    size: 29_744_345,
+    zip: true,
+    entry: 'sd-cli.exe',
+  },
+  'sdxl-inpaint': {
+    title: 'качественная модель дорисовки (SDXL)',
+    what: 'качественную модель дорисовки',
+    url: 'https://huggingface.co/gpustack/stable-diffusion-xl-inpainting-1.0-GGUF/resolve/f01275b603d7ba5cc6774b0faf70905b5d19dc47/stable-diffusion-xl-inpainting-1.0-Q8_0.gguf',
+    sha256: '4a08b13f91933e06625a7026c787408100e2116326aeda961c9a428e61c2d9c0',
+    size: 4_873_718_560,
+    entry: 'sdxl-inpainting-q8.gguf',
   },
 };
 

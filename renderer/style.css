@@ -797,3 +797,4 @@ html.glass .tool.accent { background: linear-gradient(135deg, var(--accent), col
 /* кромка и блик стеклянной линзы: в тёмной теме мягче, чтобы не было «белой рамки» */
 :root { --lens-rim: rgba(255, 255, 255, .7); --lens-glint: rgba(255, 255, 255, .85); }
 @media (prefers-color-scheme: dark) { :root { --lens-rim: rgba(255, 255, 255, .16); --lens-glint: rgba(255, 255, 255, .28); } }
+.row input[name="outpaintPrompt"] { width: 150px; text-align: left; }

@@ -489,6 +489,25 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
       }
     };
     const small = path.join(A, 'фото с кириллицей', 'пейзаж.jpg');
+    if (process.env.MEDIAVERT_OUTPAINT === 'sd') {
+      // тяжёлая модель: файлы подкладываем жёсткими ссылками из scratchpad (sd/bin, sd/model)
+      const seed = (name, from) => {
+        const d = path.join(app.getPath('userData'), 'tools', name);
+        if (fs.existsSync(path.join(d, '.ok'))) return;
+        fs.mkdirSync(d, { recursive: true });
+        for (const [src, dst] of from) { fs.rmSync(path.join(d, dst), { force: true }); fs.linkSync(src, path.join(d, dst)); }
+        fs.writeFileSync(path.join(d, '.ok'), 'seed');
+      };
+      const bin = path.join(dir, 'sd', 'bin');
+      seed('sdcpp', fs.readdirSync(bin).filter((n) => n !== 'sd.zip').map((n) => [path.join(bin, n), n]));
+      seed('sdxl-inpaint', [[path.join(dir, 'sd', 'model', 'sdxl-inpaint-q8.gguf'), 'sdxl-inpainting-q8.gguf']]);
+      const q = { outpaintModel: 'quality', outpaintPrompt: '' };
+      await runOne('s1 16:9', small, 'jpg', { outpaint: '16:9', ...q });
+      await runOne('s2 9:16', small, 'jpg', { outpaint: '9:16', ...q });
+      await runOne('s3 большое-1:1', path.join(A, 'большое.jpg'), 'jpg', { outpaint: '1:1', ...q });
+      await runOne('s4 подсказка', small, 'jpg', { outpaint: '16:9', ...q, outpaintPrompt: 'concrete wall, blue sky' });
+      return;
+    }
     await runOne('1 16:9', small, 'jpg', { outpaint: '16:9' });
     await runOne('2 9:16', small, 'png', { outpaint: '9:16' });
     await runOne('3 шире', small, 'jpg', { outpaint: 'more' });

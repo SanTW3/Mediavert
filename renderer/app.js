@@ -671,6 +671,7 @@ function render(it) {
       button('play', 'go', () => api.openFile(it.output), 'Открыть'),
       button('folder', '', () => api.reveal(it.output), 'Показать в папке'),
     );
+    if (it.canRedo) actions.append(button('retry', '', () => redoItem(it), 'Другой вариант — нейросеть перерисует края заново'));
   }
   if (it.status === 'error') actions.append(button('retry', '', () => runItems([it]), 'Повторить'));
   if (!busy) actions.append(button('close', '', () => removeItem(it), 'Убрать из списка'));
@@ -728,6 +729,19 @@ async function runItems(items) {
   refresh();
 }
 
+async function redoItem(it) {
+  const jobId = await api.redo(it.jobId);
+  if (!jobId) return;
+  byJob.delete(it.jobId);
+  it.jobId = jobId;
+  byJob.set(jobId, it);
+  it.status = 'busy';
+  it.queued = true;
+  it.progress = 0;
+  render(it);
+  refresh();
+}
+
 api.on('job:update', (job) => {
   const it = byJob.get(job.id);
   if (!it) return;
@@ -739,6 +753,7 @@ api.on('job:update', (job) => {
     it.output = job.output;
     it.outName = job.outName;
     it.outSize = job.size;
+    it.canRedo = job.canRedo;
   } else if (job.status === 'error') {
     it.status = 'error';
     it.error = job.error;

@@ -24,6 +24,9 @@ function reserve(dir, base, ext) {
   }
 }
 
+// Перерисовать можно только генеративную дорисовку: у быстрой модели результат всегда одинаковый
+const canRedo = (job) => kindOf(job.format) === 'image' && !!job.options?.outpaint && job.options.outpaintModel === 'quality';
+
 class Jobs extends EventEmitter {
   constructor(maxParallel = 2) {
     super();
@@ -70,6 +73,33 @@ class Jobs extends EventEmitter {
     return job.id;
   }
 
+  // Другой вариант генеративной дорисовки: та же задача заново, результат заменяет прежний файл.
+  // Пишем во временный файл, чтобы при ошибке или отмене прежний вариант остался.
+  redo(id) {
+    const old = this.jobs.get(id);
+    if (!old || old.status !== 'done' || !canRedo(old)) return null;
+    const job = {
+      id: String(++this.seq),
+      input: old.input,
+      name: old.name,
+      format: old.format,
+      source: old.source,
+      options: old.options,
+      status: 'queued',
+      progress: 0,
+      created: Date.now(),
+      replace: old.output,
+    };
+    const ext = path.extname(old.output).slice(1);
+    job.output = reserve(path.dirname(old.output), `~${safeBase(old.output)}`, ext);
+    this.jobs.set(job.id, job);
+    this.jobs.delete(id);
+    this.queue.push(job);
+    this.emitUpdate(job);
+    this.pump();
+    return job.id;
+  }
+
   pump() {
     while (this.running < this.max && this.queue.length) {
       const job = this.queue.shift();
@@ -96,6 +126,14 @@ class Jobs extends EventEmitter {
           job.stage = null;
           job.status = 'done';
           job.progress = 1;
+          if (job.replace) {
+            try {
+              fs.renameSync(job.output, job.replace);
+              job.output = job.replace;
+            } catch {
+              // прежний файл открыт в другой программе — новый вариант остаётся рядом под своим именем
+            }
+          }
           job.size = fs.statSync(job.output).size;
         })
         .catch((err) => {
@@ -115,7 +153,7 @@ class Jobs extends EventEmitter {
 
   public(job) {
     const { proc, options, ...rest } = job;
-    return { ...rest, outName: job.output ? path.basename(job.output) : null };
+    return { ...rest, outName: job.output ? path.basename(job.output) : null, canRedo: canRedo(job) };
   }
 
   emitUpdate(job) {

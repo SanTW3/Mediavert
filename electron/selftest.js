@@ -502,7 +502,25 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
       seed('sdcpp', fs.readdirSync(bin).filter((n) => n !== 'sd.zip').map((n) => [path.join(bin, n), n]));
       seed('sdxl-inpaint', [[path.join(dir, 'sd', 'model', 'sdxl-inpaint-q8.gguf'), 'sdxl-inpainting-q8.gguf']]);
       const q = { outpaintModel: 'quality', outpaintPrompt: '' };
-      if (process.env.MEDIAVERT_OUTPAINT_FILE) { await runOne('sf файл', process.env.MEDIAVERT_OUTPAINT_FILE, 'jpg', { outpaint: '16:9', ...q, outpaintModel: process.env.OP_MODEL || 'quality' }); return; }
+      if (process.env.MEDIAVERT_OUTPAINT_FILE) {
+        const j = await runOne('sf файл', process.env.MEDIAVERT_OUTPAINT_FILE, 'jpg', { outpaint: '16:9', ...q, outpaintModel: process.env.OP_MODEL || 'quality' });
+        if (j.canRedo) {
+          const before = fs.statSync(j.output).mtimeMs;
+          const id = jobs.redo(j.id);
+          const t0 = Date.now();
+          for (;;) {
+            const r = jobs.list().find((x) => x.id === id);
+            if (r.status === 'done' || r.status === 'error') {
+              fs.copyFileSync(r.output, path.join(out, 'op-sf2.jpg'));
+              const left = fs.readdirSync(path.dirname(r.output)).filter((n) => n.startsWith('~'));
+              log('redo', r.status, r.error || '', r.outName, 'тот же файл:', r.output === j.output, 'обновлён:', fs.statSync(r.output).mtimeMs > before, 'врем. файлов:', left.length, ((Date.now() - t0) / 1000).toFixed(1) + 's');
+              break;
+            }
+            await wait(300);
+          }
+        } else log('redo недоступен');
+        return;
+      }
       await runOne('s1 16:9', small, 'jpg', { outpaint: '16:9', ...q });
       await runOne('s2 9:16', small, 'jpg', { outpaint: '9:16', ...q });
       await runOne('s3 большое-1:1', path.join(A, 'большое.jpg'), 'jpg', { outpaint: '1:1', ...q });

@@ -600,6 +600,7 @@ async function applySettings(patch) {
 ipcMain.handle('jobs:add', (_e, { files, format, options, source }) =>
   startConvert(files, format, options, source === 'main' ? 'main' : 'shelf'),
 );
+ipcMain.handle('jobs:redo', (_e, id) => jobs.redo(String(id)));
 ipcMain.handle('jobs:list', () => jobs.list());
 ipcMain.handle('jobs:clear', (_e, sources) => jobs.clear(sources));
 ipcMain.handle('settings:get', () => settings.get());

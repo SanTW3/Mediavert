@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('api', {
       .filter(Boolean),
 
   convert: (req) => ipcRenderer.invoke('jobs:add', req),
+  redo: (jobId) => ipcRenderer.invoke('jobs:redo', jobId),
   listJobs: () => ipcRenderer.invoke('jobs:list'),
   clearJobs: (sources) => ipcRenderer.invoke('jobs:clear', sources),
 

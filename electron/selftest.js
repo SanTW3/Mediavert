@@ -502,6 +502,7 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
       seed('sdcpp', fs.readdirSync(bin).filter((n) => n !== 'sd.zip').map((n) => [path.join(bin, n), n]));
       seed('sdxl-inpaint', [[path.join(dir, 'sd', 'model', 'sdxl-inpaint-q8.gguf'), 'sdxl-inpainting-q8.gguf']]);
       const q = { outpaintModel: 'quality', outpaintPrompt: '' };
+      if (process.env.MEDIAVERT_OUTPAINT_FILE) { await runOne('sf файл', process.env.MEDIAVERT_OUTPAINT_FILE, 'jpg', { outpaint: '16:9', ...q, outpaintModel: process.env.OP_MODEL || 'quality' }); return; }
       await runOne('s1 16:9', small, 'jpg', { outpaint: '16:9', ...q });
       await runOne('s2 9:16', small, 'jpg', { outpaint: '9:16', ...q });
       await runOne('s3 большое-1:1', path.join(A, 'большое.jpg'), 'jpg', { outpaint: '1:1', ...q });

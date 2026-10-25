@@ -15,8 +15,9 @@ const LAMA = 512;
 const SD_AREA = 1024 * 1024; // SDXL обучен на ≈1 Мп
 const RATIOS = { '16:9': 16 / 9, '9:16': 9 / 16, '4:3': 4 / 3, '3:4': 3 / 4, '4:5': 4 / 5, '1:1': 1 };
 const MAX_GROW = 3.2; // сильнее нейросеть уже не продолжает фото, а выдумывает
-const SD_PROMPT = 'photo, natural seamless continuation of the scene, consistent lighting and perspective, high detail';
-const SD_NEGATIVE = 'frame, border, text, watermark, logo, signature, collage, split screen, blurry, lowres, deformed, distorted';
+// без слова «photo»: рисунки и арт должны продолжаться в своём стиле
+const SD_PROMPT = 'seamless continuation of the image, same style, consistent lighting and perspective, high detail';
+const SD_NEGATIVE = 'frame, border, letterbox, gray bars, blank area, empty background, solid color, text, watermark, logo, collage, split screen, blurry, lowres';
 
 const unpacked = (p) => p.replace('app.asar', 'app.asar.unpacked');
 const ortPath = unpacked(path.join(__dirname, '..', 'node_modules', 'onnxruntime-web', 'dist', 'ort.node.min.mjs'));
@@ -26,7 +27,7 @@ const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 const round64 = (n) => Math.min(Math.max(Math.round(n / 64) * 64, 512), 1536);
 
 // Какие компоненты нужны движку
-const engineTools = (engine) => (engine === 'sd' ? ['sdcpp', 'sdxl-inpaint', 'esrgan'] : ['lama', 'esrgan']);
+const engineTools = (engine) => (engine === 'sd' ? ['lama', 'sdcpp', 'sdxl-inpaint', 'esrgan'] : ['lama', 'esrgan']);
 
 // Размер холста и место исходного фото на нём; null — расширять не нужно
 function canvasFor(w, h, mode) {
@@ -135,12 +136,19 @@ async function fillLama({ src, c, w, h, edges, work, onSpawn }) {
   return { size: S, feather: Math.ceil((grow + 1) / Math.min(kx, ky)) };
 }
 
-// Качественный движок: SDXL Inpainting на видеокарте, холст ≈1 Мп с сохранением пропорций
-async function fillSD({ src, c, w, h, edges, work, prompt, onProgress, onSpawn }) {
+// Качественный движок: SDXL Inpainting на видеокарте, холст ≈1 Мп с сохранением пропорций.
+// Новые поля сначала черново заполняет LaMa: по серому холсту SDXL часто «оставляет рамку» серой.
+async function fillSD(args) {
+  const { src, c, w, h, edges, work, prompt, onProgress, onSpawn } = args;
+  await fillLama(args);
+  fs.renameSync(path.join(work, 'fill.png'), path.join(work, 'draft.png'));
+  onProgress(0.1);
   const gw = round64(Math.sqrt((SD_AREA * c.W) / c.H));
   const gh = round64(Math.sqrt((SD_AREA * c.H) / c.W));
   const grow = 8;
   const { rgb, mask, kx, ky } = await prepare(src, c, w, h, gw, gh, grow, edges, onSpawn);
+  const draft = await readRGB(path.join(work, 'draft.png'), gw, gh, onSpawn);
+  for (let i = 0; i < gw * gh; i++) if (mask[i]) draft.copy(rgb, i * 3, i * 3, i * 3 + 3);
   await writePNG(path.join(work, 'init.png'), rgb, gw, gh, onSpawn);
   await writePNG(path.join(work, 'mask.png'), mask, gw, gh, onSpawn, 'gray');
   const dir = tools.dirOf('sdcpp');
@@ -157,7 +165,7 @@ async function fillSD({ src, c, w, h, edges, work, prompt, onProgress, onSpawn }
         '-i', rel(path.join(work, 'init.png')),
         '--mask', rel(path.join(work, 'mask.png')),
         '-W', String(gw), '-H', String(gh),
-        '--strength', '1', '--steps', String(steps), '--cfg-scale', '6',
+        '--strength', '0.9', '--steps', String(steps), '--cfg-scale', '6',
         '-s', String(crypto.randomInt(1, 2 ** 31)),
         '--vae-tiling',
         '-o', rel(path.join(work, 'fill.png')),
@@ -165,7 +173,7 @@ async function fillSD({ src, c, w, h, edges, work, prompt, onProgress, onSpawn }
       dir,
       (s) => {
         const m = [...s.matchAll(/\|\s*(\d+)\/(\d+)\s*-/g)].pop();
-        if (m && +m[2] === steps) onProgress(Math.min(+m[1] / steps, 1));
+        if (m && +m[2] > 1) onProgress(0.1 + Math.min(+m[1] / +m[2], 1) * 0.9);
       },
       onSpawn,
     );

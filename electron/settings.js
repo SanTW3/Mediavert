@@ -8,9 +8,11 @@ function defaults() {
       sampleRate: '', bitDepth: '24', channels: '', bitrate: '320',
       normalize: false, lufs: '-14', removeSilence: false, fadeIn: '', fadeOut: '',
       height: '', fps: '', quality: 'medium', mute: false,
-      width: '', imageQuality: '90',
+      width: '', imageQuality: '90', enhance: '', upscale: '',
+      targetSize: '',
+      speechModel: 'base', speechLang: 'auto',
     },
-    defaults: { audio: 'mp3', video: 'mp4', image: 'png' },
+    defaults: { audio: 'mp3', video: 'mp4', image: 'png', text: 'txt' },
     outputMode: 'beside', // beside — рядом с исходником, folder — в outputDir
     outputDir: path.join(app.getPath('documents'), 'Mediavert'),
     shelf: true,

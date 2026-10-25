@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { FORMATS, kindOf, kindOfFile, canConvert } = require('../lib/formats');
-const { convert } = require('../lib/convert');
+const { runJob } = require('./ai');
 
 const ACCUSATIVE = { audio: 'Аудио', video: 'Видео', image: 'Картинку' };
 
@@ -76,7 +76,7 @@ class Jobs extends EventEmitter {
       this.running++;
       job.status = 'converting';
       this.emitUpdate(job);
-      convert({
+      runJob({
         input: job.input,
         output: job.output,
         format: job.format,
@@ -85,9 +85,15 @@ class Jobs extends EventEmitter {
           job.progress = p;
           this.emitUpdate(job);
         },
+        // что сейчас происходит: «Скачиваю модель… 34%», «Распознаю речь…»
+        onStage: (text) => {
+          job.stage = text;
+          this.emitUpdate(job);
+        },
         onSpawn: (proc) => (job.proc = proc),
       })
         .then(() => {
+          job.stage = null;
           job.status = 'done';
           job.progress = 1;
           job.size = fs.statSync(job.output).size;

@@ -73,6 +73,7 @@
         <button class="tab active" data-tab="audio">Аудио</button>
         <button class="tab" data-tab="video">Видео</button>
         <button class="tab" data-tab="image">Фото</button>
+        <button class="tab" data-tab="text">Текст</button>
       </nav>
 
       <!-- АУДИО -->
@@ -174,6 +175,17 @@
               <option value="low">Компактное</option>
             </select>
           </label>
+          <label class="row"><span>Сжать до размера<small>Подберёт качество под нужный размер файла</small></span>
+            <select name="targetSize">
+              <option value="">Не сжимать</option>
+              <option value="8">8 МБ · Discord</option>
+              <option value="10">10 МБ</option>
+              <option value="25">25 МБ · почта</option>
+              <option value="50">50 МБ</option>
+              <option value="100">100 МБ</option>
+              <option value="200">200 МБ</option>
+            </select>
+          </label>
           <label class="row"><span>Убрать звук</span><input type="checkbox" class="switch" name="mute"></label>
         </div>
         <p class="footnote">Чтобы вытащить звук из видео, выберите у файла WAV или MP3 — применятся настройки вкладки «Аудио». PNG/JPG сохранит кадр в момент «Начала». GIF без указанного разрешения — шириной 480 px.</p>
@@ -184,10 +196,57 @@
         <h3 class="group-title">Формат</h3>
         <div class="rows">
           <label class="row"><span>По умолчанию</span><select data-default="image"></select></label>
-          <label class="row"><span>Ширина</span><span class="unit"><input type="number" name="width" min="8" max="16384" placeholder="авто">px</span></label>
+          <label class="row"><span>Улучшение<small>ИИ дорисовывает детали — нейросеть ≈45 МБ скачается один раз</small></span>
+            <select name="enhance">
+              <option value="">Нет</option>
+              <option value="clean">Чётче и чище</option>
+              <option value="ai">ИИ-улучшение</option>
+            </select>
+          </label>
+          <label class="row"><span>Увеличить<small>С «ИИ-улучшением» — нейросетью, иначе обычным способом</small></span>
+            <select name="upscale">
+              <option value="">Нет</option>
+              <option value="2">В 2 раза</option>
+              <option value="4">В 4 раза</option>
+            </select>
+          </label>
+          <label class="row"><span>Ширина<small>Точный размер — важнее «Увеличить»</small></span><span class="unit"><input type="number" name="width" min="8" max="16384" placeholder="авто">px</span></label>
           <label class="row column"><span>Качество JPG и WebP <b id="qVal">90</b></span><input type="range" name="imageQuality" min="1" max="100" value="90"></label>
         </div>
         <p class="footnote">ICO автоматически уменьшается до 256×256 — подойдёт для иконок. Для соцсетей и почты удобно JPG шириной 1080–2000 px.</p>
+      </div>
+
+      <!-- ТЕКСТ (распознавание речи) -->
+      <div class="panel" data-panel="text">
+        <h3 class="group-title">Распознавание речи</h3>
+        <div class="rows">
+          <label class="row"><span>По умолчанию</span><select data-default="text"></select></label>
+          <label class="row"><span>Модель</span>
+            <select name="speechModel">
+              <option value="base">Быстрая · ≈150 МБ</option>
+              <option value="small">Точная · ≈490 МБ</option>
+            </select>
+          </label>
+          <label class="row"><span>Язык речи</span>
+            <select name="speechLang">
+              <option value="auto">Определить сам</option>
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+              <option value="uk">Українська</option>
+              <option value="de">Deutsch</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="it">Italiano</option>
+              <option value="pt">Português</option>
+              <option value="pl">Polski</option>
+              <option value="tr">Türkçe</option>
+              <option value="ja">日本語</option>
+              <option value="zh">中文</option>
+              <option value="ko">한국어</option>
+            </select>
+          </label>
+        </div>
+        <p class="footnote">Выберите у аудио или видео формат TXT (текст) или SRT (субтитры). Распознавание идёт на компьютере, без интернета — модель скачивается один раз. Если язык известен, укажите его: так точнее.</p>
       </div>
 
       <div class="trim">

@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('api', {
   setGlassRect: (rect) => ipcRenderer.send('shelf:glass-rect', rect),
 
   getVersion: () => ipcRenderer.invoke('app:version'),
+  toolsNeeded: (format, options) => ipcRenderer.invoke('tools:needed', { format, options }),
   updateStatus: () => ipcRenderer.invoke('update:status'),
   checkUpdates: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),

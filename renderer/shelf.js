@@ -247,7 +247,7 @@ function renderJobs() {
     const meta =
       j.status === 'error' ? `<div class="job-meta err">${escapeHtml(j.error)}</div>`
       : done ? `<div class="job-meta ok">✓ ${escapeHtml(j.outName)} · ${fmtSize(j.size)}</div>`
-      : `<div class="job-meta">${j.status === 'queued' ? 'В очереди…' : `Конвертирую… ${Math.round(j.progress * 100)}%`}</div><div class="bar"><span style="width:${Math.round(j.progress * 100)}%"></span></div>`;
+      : `<div class="job-meta">${j.status === 'queued' ? 'В очереди…' : escapeHtml(j.stage && !j.stage.includes('%') ? `${j.stage} ${Math.round(j.progress * 100)}%` : j.stage || `Конвертирую… ${Math.round(j.progress * 100)}%`)}</div><div class="bar"><span style="width:${Math.round(j.progress * 100)}%"></span></div>`;
     li.innerHTML = `
       <div class="job-icon" data-kind="${kind}">${escapeHtml((done ? extOf(j.outName) : j.format).slice(0, 4))}</div>
       <div><div class="job-name" title="${escapeHtml(j.input)}">${escapeHtml(j.name)}</div>${meta}</div>

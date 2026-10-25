@@ -8,6 +8,8 @@ const integration = require('./integration');
 const updater = require('./updater');
 const fullscreen = require('./fullscreen');
 const blur = require('./blur');
+const tools = require('./tools');
+const { neededTools } = require('./ai');
 const { extOf } = require('../lib/formats');
 
 const ROOT = path.join(__dirname, '..');
@@ -611,6 +613,8 @@ ipcMain.handle('dialog:pick-folder', async (e) => {
 });
 
 ipcMain.handle('app:version', () => app.getVersion());
+// какие скачиваемые компоненты нужны задаче и есть ли они уже
+ipcMain.handle('tools:needed', (_e, { format, options }) => tools.status(neededTools(format, options)));
 ipcMain.handle('update:status', () => updater.getStatus());
 ipcMain.handle('update:check', () => updater.check());
 ipcMain.handle('update:install', () => updater.install());

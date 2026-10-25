@@ -399,6 +399,66 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     await wait(600);
     log('2 after buttonless move:', await state());
   }
+
+  // нейросети и сжатие: распознавание речи, ИИ-улучшение фото, сжатие видео до размера
+  async function aiTest() {
+    const { probe } = require('../lib/convert');
+    const A = path.join(dir, 'ai-samples');
+    settings.set({ outputMode: 'beside' });
+    // быструю модель подкладываем из уже проверенной копии, остальное скачивается по-настоящему
+    const md = path.join(app.getPath('userData'), 'tools', 'whisper-base');
+    fs.mkdirSync(md, { recursive: true });
+    fs.copyFileSync(path.join(dir, 'dl-model', 'ggml-base.bin'), path.join(md, 'ggml-base.bin'));
+    fs.writeFileSync(path.join(md, '.ok'), 'seed');
+    const base = settings.get().options;
+    const runOne = async (label, file, format, extra) => {
+      const [id] = startConvert([file], format, { ...base, allowDownload: true, ...extra }, 'main');
+      const t0 = Date.now();
+      const stages = new Set();
+      for (;;) {
+        const j = jobs.list().find((x) => x.id === id);
+        if (j.stage) stages.add(j.stage.replace(/\d+%/, '…'));
+        if (j.status === 'done' || j.status === 'error') {
+          log(label, j.status, j.error || '', '→', j.outName || '', ((Date.now() - t0) / 1000).toFixed(1) + 's', '| этапы:', [...stages].join(' / '));
+          return j;
+        }
+        await wait(200);
+      }
+    };
+    let j = await runOne('1 речь → txt', path.join(A, 'папка с речью', 'речь тест.wav'), 'txt', { speechLang: 'auto' });
+    if (j.status === 'done') log('   текст:', fs.readFileSync(j.output, 'utf8').trim().replace(/\s+/g, ' '));
+    j = await runOne('2 речь → srt', path.join(A, 'папка с речью', 'речь тест.wav'), 'srt', { speechLang: 'ru' });
+    if (j.status === 'done') log('   srt:', fs.readFileSync(j.output, 'utf8').trim().split(/\r?\n/).slice(0, 3).join(' | '));
+    j = await runOne('3 видео → srt', path.join(A, 'интервью.mp4'), 'srt', { speechLang: 'ru' });
+    if (j.status === 'done') log('   srt:', fs.readFileSync(j.output, 'utf8').trim().split(/\r?\n/).slice(0, 3).join(' | '));
+    j = await runOne('4 фото ИИ ×2', path.join(A, 'маленькое фото.png'), 'png', { enhance: 'ai', upscale: '2', width: '' });
+    if (j.status === 'done') { const i = await probe(j.output); log('   размер:', i.width + 'x' + i.height); }
+    j = await runOne('5 фото чётче', path.join(A, 'маленькое фото.png'), 'jpg', { enhance: 'clean', upscale: '', width: '' });
+    j = await runOne('6 фото ×4 без ИИ', path.join(A, 'маленькое фото.png'), 'png', { enhance: '', upscale: '4', width: '' });
+    if (j.status === 'done') { const i = await probe(j.output); log('   размер:', i.width + 'x' + i.height); }
+    j = await runOne('7 ИИ до ширины 1000', path.join(A, 'маленькое фото.png'), 'webp', { enhance: 'ai', upscale: '', width: '1000' });
+    if (j.status === 'done') { const i = await probe(j.output); log('   размер:', i.width + 'x' + i.height); }
+    j = await runOne('8 видео 96 МБ → 8 МБ', path.join(A, 'тяжёлое видео.mp4'), 'mp4', { targetSize: '8', height: '', quality: 'medium', mute: false });
+    if (j.status === 'done') { const i = await probe(j.output); log('   размер файла:', (fs.statSync(j.output).size / 1048576).toFixed(2) + ' МБ', '| кадр', i.width + 'x' + i.height); }
+    j = await runOne('9 без разрешения скачивать', path.join(A, 'папка с речью', 'речь тест.wav'), 'txt', { speechModel: 'small', allowDownload: false });
+    log('tools now:', JSON.stringify(require('./tools').status(['whisper', 'whisper-base', 'whisper-small', 'esrgan'])));
+  }
+
+  // снимки панелей настроек справа: видео, фото, текст
+  async function panelShots(main) {
+    await wait(800);
+    for (let i = 0; i < 2; i++) { await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').forEach((d) => d.close())`); await wait(500); }
+    await main.webContents.executeJavaScript("setPref({ material: 'none', theme: 'dark' })");
+    await wait(500);
+    for (const tab of ['video', 'image', 'text']) {
+      await main.webContents.executeJavaScript(`document.querySelector('.tab[data-tab=${tab}]').click()`);
+      await wait(600);
+      const r = await main.webContents.executeJavaScript("(() => { const b = document.querySelector('.inspector').getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), width: Math.round(b.width), height: Math.min(Math.round(b.height), 640) }; })()");
+      const img = await main.webContents.capturePage(r);
+      fs.writeFileSync(path.join(out, `panel-${tab}.png`), img.toPNG());
+    }
+    log('panels captured');
+  }
   const finishAll = () =>
     new Promise((resolve) => {
       const check = () => (jobs.list().every((j) => j.status === 'done' || j.status === 'error') ? resolve() : setTimeout(check, 200));
@@ -470,7 +530,9 @@ module.exports = async function selftest({ app, jobs, startConvert, getShelf, ge
     if (process.env.MEDIAVERT_MORPH_ONLY) {
       let shelf2;
       while (!(shelf2 = getShelf()) || !shelf2.isVisible()) await wait(100);
-      if (process.env.MEDIAVERT_STUCK) await stuckTest(main);
+      if (process.env.MEDIAVERT_PANELS) await panelShots(main);
+      else if (process.env.MEDIAVERT_AI) await aiTest();
+      else if (process.env.MEDIAVERT_STUCK) await stuckTest(main);
       else if (process.env.MEDIAVERT_LIQUID) await liquidTest(main);
       else if (process.env.MEDIAVERT_CONTRAST) await contrastTest(main);
       else if (process.env.MEDIAVERT_MAXIMIZE) await maximizeTest(main);

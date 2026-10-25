@@ -19,7 +19,7 @@ const PRESETS = [
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
-const state = { items: [], defaults: { audio: 'mp3', video: 'mp4', image: 'png' }, settings: null };
+const state = { items: [], defaults: { audio: 'mp3', video: 'mp4', image: 'png', text: 'txt' }, settings: null };
 const byJob = new Map();
 let uid = 0;
 
@@ -50,7 +50,7 @@ function fillFormatSelect(select, groups, value) {
   select.innerHTML = '';
   for (const g of groups) {
     const og = document.createElement('optgroup');
-    og.label = { audio: 'Аудио', video: 'Видео', image: 'Изображение / кадр' }[g];
+    og.label = { audio: 'Аудио', video: 'Видео', image: 'Изображение / кадр', text: 'Текст из речи' }[g];
     for (const [v, , label] of FORMAT_LIST[g]) og.append(new Option(label, v));
     select.append(og);
   }
@@ -653,7 +653,8 @@ function render(it) {
   const meta = $('.fmeta', row);
   meta.className = 'fmeta';
   if (it.status === 'idle') meta.textContent = `${KIND_LABEL[it.kind]} · ${fmtSize(it.size)}`;
-  if (busy) meta.textContent = it.queued ? 'В очереди…' : `Конвертирую… ${Math.round(it.progress * 100)}%`;
+  const pct = `${Math.round(it.progress * 100)}%`;
+  if (busy) meta.textContent = it.queued ? 'В очереди…' : it.stage ? (it.stage.includes('%') ? it.stage : `${it.stage} ${pct}`) : `Конвертирую… ${pct}`;
   if (it.status === 'done') {
     meta.classList.add('ok');
     meta.textContent = `Готово · ${it.outName} · ${fmtSize(it.outSize || 0)}`;
@@ -695,8 +696,25 @@ function refresh() {
 
 /* ---------- конвертация ---------- */
 
+const fmtMb = (b) => `${Math.round(b / 1048576)} МБ`;
+
+// Задачам с нейросетями нужны компоненты, которые скачиваются один раз — спрашиваем согласие
+async function confirmDownloads(items, options) {
+  const missing = new Map();
+  for (const it of items) {
+    const st = await api.toolsNeeded(it.target, options);
+    for (const [name, s] of Object.entries(st)) if (!s.installed) missing.set(name, s);
+  }
+  if (!missing.size) return true;
+  const list = [...missing.values()].map((s) => `• ${s.title} — ${fmtMb(s.size)}`).join('\n');
+  const total = fmtMb([...missing.values()].reduce((a, s) => a + s.size, 0));
+  return confirm(`Для этого нужно один раз скачать (всего ${total}):\n\n${list}\n\nИз официальных источников (GitHub, Hugging Face). Потом всё работает без интернета. Скачать и продолжить?`);
+}
+
 async function runItems(items) {
   const options = collectOptions();
+  if (!(await confirmDownloads(items, options))) return;
+  options.allowDownload = true;
   for (const it of items) {
     it.status = 'busy';
     it.queued = true;
@@ -715,6 +733,7 @@ api.on('job:update', (job) => {
   if (!it) return;
   it.progress = job.progress || 0;
   it.queued = job.status === 'queued';
+  it.stage = job.stage || null;
   if (job.status === 'done') {
     it.status = 'done';
     it.output = job.output;
